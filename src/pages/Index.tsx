@@ -101,15 +101,16 @@ const Index = () => {
       // All remaining rows are data rows (from row 5 onwards)
       const dataRows = rows.slice(4);
 
-      // Create an array to hold all JSON objects
-      const jsonArray: any[] = [];
+      // Create an object to hold all JSON objects with declaredName as keys
+      const jsonObject: any = {};
       const nestedFields: string[] = [];
       const dataTypes = new Set<string>();
 
       // Process each data row
       for (let rowIndex = 0; rowIndex < dataRows.length; rowIndex++) {
         const valueRow = dataRows[rowIndex];
-        const jsonObject: any = {};
+        const rowObject: any = {};
+        let declaredNameValue = '';
 
         for (let i = 0; i < fieldNameRow.length; i++) {
           const fieldName = fieldNameRow[i];
@@ -129,9 +130,15 @@ const Index = () => {
             nestedFields.push(fieldName);
           }
 
+          // Capture declaredName value but don't add it to the object
+          if (fieldName.trim() === 'declaredName') {
+            declaredNameValue = value || '';
+            continue;
+          }
+
           if (fieldName.includes('>')) {
             const parts = fieldName.split('>');
-            let current = jsonObject;
+            let current = rowObject;
             
             // Navigate/create nested structure
             for (let j = 0; j < parts.length - 1; j++) {
@@ -147,15 +154,18 @@ const Index = () => {
             current[finalKey] = convertValue(value, dataType, unit);
           } else {
             // Simple field
-            jsonObject[fieldName.trim()] = convertValue(value, dataType, unit);
+            rowObject[fieldName.trim()] = convertValue(value, dataType, unit);
           }
         }
         
-        jsonArray.push(jsonObject);
+        // Use declaredName as the key for this object
+        if (declaredNameValue) {
+          jsonObject[declaredNameValue] = rowObject;
+        }
       }
 
       // Convert to formatted JSON string
-      const jsonString = JSON.stringify(jsonArray, null, 2);
+      const jsonString = JSON.stringify(jsonObject, null, 2);
       
       setResult({
         jsonOutput: jsonString,
@@ -360,10 +370,10 @@ const Index = () => {
                   <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#d97706' }}>{result.dataTypes.length}</div>
                   <div style={{ fontSize: '14px', color: '#64748b' }}>Data Types</div>
                 </div>
-                <div style={{ textAlign: 'center', padding: '16px', backgroundColor: '#f8fafc', borderRadius: '8px' }}>
-                  <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#dc2626' }}>{JSON.parse(result.jsonOutput).length}</div>
-                  <div style={{ fontSize: '14px', color: '#64748b' }}>Data Rows</div>
-                </div>
+                 <div style={{ textAlign: 'center', padding: '16px', backgroundColor: '#f8fafc', borderRadius: '8px' }}>
+                   <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#dc2626' }}>{Object.keys(JSON.parse(result.jsonOutput)).length}</div>
+                   <div style={{ fontSize: '14px', color: '#64748b' }}>Data Rows</div>
+                 </div>
               </div>
               
               {result.dataTypes.length > 0 && (
