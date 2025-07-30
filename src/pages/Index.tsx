@@ -88,61 +88,74 @@ const Index = () => {
       const rows = parsed.data as string[][];
       
       if (rows.length < 5) {
-        setError('CSV must have at least 5 rows (field name+type, data type, unit, field name, values)');
+        setError('CSV must have at least 5 rows (4 header rows + at least 1 data row)');
         return;
       }
 
-      // Extract the rows
+      // Extract the header rows
       const fieldNameAndTypeRow = rows[0]; // Row 1: field name and data type
       const dataTypeRow = rows[1]; // Row 2: just data type
       const unitRow = rows[2]; // Row 3: units
       const fieldNameRow = rows[3]; // Row 4: field names (with nesting)
-      const valueRow = rows[4]; // Row 5: actual values
+      
+      // All remaining rows are data rows (from row 5 onwards)
+      const dataRows = rows.slice(4);
 
-      // Create the JSON object
-      const jsonObject: any = {};
+      // Create an array to hold all JSON objects
+      const jsonArray: any[] = [];
       const nestedFields: string[] = [];
       const dataTypes = new Set<string>();
 
-      for (let i = 0; i < fieldNameRow.length; i++) {
-        const fieldName = fieldNameRow[i];
-        const value = valueRow[i];
-        const dataType = dataTypeRow[i];
-        const unit = unitRow[i];
+      // Process each data row
+      for (let rowIndex = 0; rowIndex < dataRows.length; rowIndex++) {
+        const valueRow = dataRows[rowIndex];
+        const jsonObject: any = {};
 
-        // Skip empty field names
-        if (!fieldName || fieldName.trim() === '') continue;
+        for (let i = 0; i < fieldNameRow.length; i++) {
+          const fieldName = fieldNameRow[i];
+          const value = valueRow[i];
+          const dataType = dataTypeRow[i];
+          const unit = unitRow[i];
 
-        if (dataType && dataType.trim()) {
-          dataTypes.add(dataType.trim());
-        }
+          // Skip empty field names
+          if (!fieldName || fieldName.trim() === '') continue;
 
-        // Handle nested fields (e.g., "dataSheet>filename")
-        if (fieldName.includes('>')) {
-          nestedFields.push(fieldName);
-          const parts = fieldName.split('>');
-          let current = jsonObject;
-          
-          // Navigate/create nested structure
-          for (let j = 0; j < parts.length - 1; j++) {
-            const part = parts[j].trim();
-            if (!current[part]) {
-              current[part] = {};
-            }
-            current = current[part];
+          if (dataType && dataType.trim()) {
+            dataTypes.add(dataType.trim());
           }
-          
-          // Set the final value
-          const finalKey = parts[parts.length - 1].trim();
-          current[finalKey] = convertValue(value, dataType, unit);
-        } else {
-          // Simple field
-          jsonObject[fieldName.trim()] = convertValue(value, dataType, unit);
+
+          // Handle nested fields (e.g., "dataSheet>filename") - only add to nestedFields once
+          if (fieldName.includes('>') && rowIndex === 0) {
+            nestedFields.push(fieldName);
+          }
+
+          if (fieldName.includes('>')) {
+            const parts = fieldName.split('>');
+            let current = jsonObject;
+            
+            // Navigate/create nested structure
+            for (let j = 0; j < parts.length - 1; j++) {
+              const part = parts[j].trim();
+              if (!current[part]) {
+                current[part] = {};
+              }
+              current = current[part];
+            }
+            
+            // Set the final value
+            const finalKey = parts[parts.length - 1].trim();
+            current[finalKey] = convertValue(value, dataType, unit);
+          } else {
+            // Simple field
+            jsonObject[fieldName.trim()] = convertValue(value, dataType, unit);
+          }
         }
+        
+        jsonArray.push(jsonObject);
       }
 
       // Convert to formatted JSON string
-      const jsonString = JSON.stringify(jsonObject, null, 2);
+      const jsonString = JSON.stringify(jsonArray, null, 2);
       
       setResult({
         jsonOutput: jsonString,
@@ -281,7 +294,7 @@ const Index = () => {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <p style={{ fontSize: '14px', fontWeight: '500' }}>Drop your CSV file here or click to browse</p>
                 <p style={{ fontSize: '12px', color: '#6b7280' }}>
-                  Must follow the 5-row format: field+type, data type, unit, field name, values
+                  Format: 4 header rows (field+type, data type, unit, field name) + multiple data rows
                 </p>
               </div>
             )}
@@ -346,6 +359,10 @@ const Index = () => {
                 <div style={{ textAlign: 'center', padding: '16px', backgroundColor: '#f8fafc', borderRadius: '8px' }}>
                   <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#d97706' }}>{result.dataTypes.length}</div>
                   <div style={{ fontSize: '14px', color: '#64748b' }}>Data Types</div>
+                </div>
+                <div style={{ textAlign: 'center', padding: '16px', backgroundColor: '#f8fafc', borderRadius: '8px' }}>
+                  <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#dc2626' }}>{JSON.parse(result.jsonOutput).length}</div>
+                  <div style={{ fontSize: '14px', color: '#64748b' }}>Data Rows</div>
                 </div>
               </div>
               
