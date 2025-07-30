@@ -2,7 +2,7 @@ import CsvConverter from '@/components/CsvConverter';
 
 const Index = () => {
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen">
       <CsvConverter />
     </div>
   );

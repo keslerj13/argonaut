@@ -1,11 +1,6 @@
 import React, { useState, useRef } from 'react';
 import Papa from 'papaparse';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
 import { Upload, Download, FileText, CheckCircle, AlertCircle, Copy } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
 
 interface ConversionResult {
   jsonOutput: string;
@@ -20,7 +15,6 @@ const CsvConverter = () => {
   const [error, setError] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { toast } = useToast();
 
   const convertValue = (value: string, dataType: string, unit: string) => {
     if (!value || value.trim() === '') return null;
@@ -157,11 +151,6 @@ const CsvConverter = () => {
         dataTypes: Array.from(dataTypes)
       });
 
-      toast({
-        title: "Conversion successful!",
-        description: `Converted ${fieldNameRow.filter(f => f && f.trim()).length} fields to JSON`,
-      });
-
     } catch (err) {
       setError('Error processing file: ' + (err as Error).message);
     } finally {
@@ -174,16 +163,9 @@ const CsvConverter = () => {
     
     try {
       await navigator.clipboard.writeText(result.jsonOutput);
-      toast({
-        title: "Copied!",
-        description: "JSON output copied to clipboard",
-      });
+      alert('JSON output copied to clipboard!');
     } catch (err) {
-      toast({
-        title: "Copy failed",
-        description: "Could not copy to clipboard",
-        variant: "destructive",
-      });
+      alert('Could not copy to clipboard');
     }
   };
 
@@ -199,11 +181,6 @@ const CsvConverter = () => {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    
-    toast({
-      title: "Downloaded!",
-      description: "JSON file has been downloaded",
-    });
   };
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -239,195 +216,177 @@ const CsvConverter = () => {
     <div className="max-w-6xl mx-auto p-6 space-y-6">
       {/* Header */}
       <div className="text-center space-y-4">
-        <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-primary rounded-xl shadow-converter">
-          <FileText className="w-8 h-8 text-converter-primary-foreground" />
+        <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 text-white rounded-xl shadow-lg">
+          <FileText className="w-8 h-8" />
         </div>
         <div>
-          <h1 className="text-4xl font-bold bg-gradient-primary bg-clip-text text-transparent mb-2">
+          <h1 className="text-4xl font-bold text-gray-900 mb-2">
             CSV to JSON Converter
           </h1>
-          <p className="text-lg text-muted-foreground">
+          <p className="text-lg text-gray-600">
             Convert structured CSV files to JSON with advanced mapping rules
           </p>
         </div>
       </div>
 
       {/* File Upload */}
-      <Card className="shadow-converter">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Upload className="w-5 h-5" />
-            Upload CSV File
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div
-            className="border-2 border-dashed border-upload-border-dashed rounded-lg p-8 text-center transition-all duration-300 hover:border-upload-border hover:bg-muted/50 cursor-pointer"
-            onDrop={handleDrop}
-            onDragOver={handleDragOver}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <Upload className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-            {file ? (
-              <div className="space-y-2">
-                <p className="text-sm font-medium text-converter-success">{file.name}</p>
-                <p className="text-xs text-muted-foreground">
-                  {(file.size / 1024).toFixed(1)} KB
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <p className="text-sm font-medium">Drop your CSV file here or click to browse</p>
-                <p className="text-xs text-muted-foreground">
-                  Must follow the 5-row format: field+type, data type, unit, field name, values
-                </p>
-              </div>
-            )}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".csv"
-              onChange={handleFileSelect}
-              className="hidden"
-            />
-          </div>
-          
-          {file && (
-            <div className="mt-4 flex justify-center">
-              <Button 
-                onClick={processFile} 
-                disabled={isProcessing}
-                className="bg-upload-bg hover:bg-upload-bg-hover text-converter-accent-foreground transition-smooth"
-              >
-                {isProcessing ? 'Processing...' : 'Convert to JSON'}
-              </Button>
+      <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
+        <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+          <Upload className="w-5 h-5" />
+          Upload CSV File
+        </h2>
+        <div
+          className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center transition-all duration-300 hover:border-blue-400 hover:bg-gray-50 cursor-pointer"
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          onClick={() => fileInputRef.current?.click()}
+        >
+          <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+          {file ? (
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-green-600">{file.name}</p>
+              <p className="text-xs text-gray-500">
+                {(file.size / 1024).toFixed(1)} KB
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Drop your CSV file here or click to browse</p>
+              <p className="text-xs text-gray-500">
+                Must follow the 5-row format: field+type, data type, unit, field name, values
+              </p>
             </div>
           )}
-        </CardContent>
-      </Card>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv"
+            onChange={handleFileSelect}
+            className="hidden"
+          />
+        </div>
+        
+        {file && (
+          <div className="mt-4 flex justify-center">
+            <button 
+              onClick={processFile} 
+              disabled={isProcessing}
+              className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-medium disabled:opacity-50"
+            >
+              {isProcessing ? 'Processing...' : 'Convert to JSON'}
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* Error Display */}
       {error && (
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="h-4 w-4 text-red-600" />
+            <p className="text-red-800">{error}</p>
+          </div>
+        </div>
       )}
 
       {/* Results */}
       {result && (
         <div className="space-y-6">
           {/* Summary Stats */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <CheckCircle className="w-5 h-5 text-converter-success" />
-                Conversion Summary
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="text-center p-4 bg-muted/50 rounded-lg">
-                  <div className="text-2xl font-bold text-converter-primary">{result.fieldCount}</div>
-                  <div className="text-sm text-muted-foreground">Total Fields</div>
-                </div>
-                <div className="text-center p-4 bg-muted/50 rounded-lg">
-                  <div className="text-2xl font-bold text-converter-accent">{result.nestedFields.length}</div>
-                  <div className="text-sm text-muted-foreground">Nested Fields</div>
-                </div>
-                <div className="text-center p-4 bg-muted/50 rounded-lg">
-                  <div className="text-2xl font-bold text-converter-warning">{result.dataTypes.length}</div>
-                  <div className="text-sm text-muted-foreground">Data Types</div>
+          <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
+            <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+              <CheckCircle className="w-5 h-5 text-green-600" />
+              Conversion Summary
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="text-center p-4 bg-gray-50 rounded-lg">
+                <div className="text-2xl font-bold text-blue-600">{result.fieldCount}</div>
+                <div className="text-sm text-gray-600">Total Fields</div>
+              </div>
+              <div className="text-center p-4 bg-gray-50 rounded-lg">
+                <div className="text-2xl font-bold text-green-600">{result.nestedFields.length}</div>
+                <div className="text-sm text-gray-600">Nested Fields</div>
+              </div>
+              <div className="text-center p-4 bg-gray-50 rounded-lg">
+                <div className="text-2xl font-bold text-yellow-600">{result.dataTypes.length}</div>
+                <div className="text-sm text-gray-600">Data Types</div>
+              </div>
+            </div>
+            
+            {result.dataTypes.length > 0 && (
+              <div className="mt-4">
+                <p className="text-sm font-medium mb-2">Data Types Found:</p>
+                <div className="flex flex-wrap gap-2">
+                  {result.dataTypes.map((type, index) => (
+                    <span key={index} className="px-2 py-1 bg-blue-100 text-blue-800 text-sm rounded">{type}</span>
+                  ))}
                 </div>
               </div>
-              
-              {result.dataTypes.length > 0 && (
-                <div className="mt-4">
-                  <p className="text-sm font-medium mb-2">Data Types Found:</p>
-                  <div className="flex flex-wrap gap-2">
-                    {result.dataTypes.map((type, index) => (
-                      <Badge key={index} variant="secondary">{type}</Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+            )}
+          </div>
 
           {/* JSON Output */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>Generated JSON</CardTitle>
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={copyToClipboard}
-                    className="flex items-center gap-2"
-                  >
-                    <Copy className="w-4 h-4" />
-                    Copy
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={downloadJson}
-                    className="flex items-center gap-2"
-                  >
-                    <Download className="w-4 h-4" />
-                    Download
-                  </Button>
-                </div>
+          <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold">Generated JSON</h2>
+              <div className="flex gap-2">
+                <button
+                  onClick={copyToClipboard}
+                  className="flex items-center gap-2 px-3 py-1 border border-gray-300 rounded text-sm hover:bg-gray-50"
+                >
+                  <Copy className="w-4 h-4" />
+                  Copy
+                </button>
+                <button
+                  onClick={downloadJson}
+                  className="flex items-center gap-2 px-3 py-1 border border-gray-300 rounded text-sm hover:bg-gray-50"
+                >
+                  <Download className="w-4 h-4" />
+                  Download
+                </button>
               </div>
-            </CardHeader>
-            <CardContent>
-              <div className="bg-code-bg border border-code-border rounded-lg p-4 max-h-96 overflow-auto">
-                <pre className="text-sm text-code-text whitespace-pre-wrap font-mono">
-                  {result.jsonOutput}
-                </pre>
-              </div>
-            </CardContent>
-          </Card>
+            </div>
+            <div className="bg-gray-900 border border-gray-300 rounded-lg p-4 max-h-96 overflow-auto">
+              <pre className="text-sm text-gray-100 whitespace-pre-wrap font-mono">
+                {result.jsonOutput}
+              </pre>
+            </div>
+          </div>
 
           {/* Conversion Rules */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Conversion Rules Applied</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                <div className="space-y-2">
-                  <div className="flex items-start gap-2">
-                    <CheckCircle className="w-4 h-4 text-converter-success mt-0.5" />
-                    <span>Nested fields with {">"} converted to nested objects</span>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <CheckCircle className="w-4 h-4 text-converter-success mt-0.5" />
-                    <span>Array values in brackets [like this] parsed as JSON arrays</span>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <CheckCircle className="w-4 h-4 text-converter-success mt-0.5" />
-                    <span>Numeric values auto-converted based on data types</span>
-                  </div>
+          <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
+            <h2 className="text-xl font-semibold mb-4">Conversion Rules Applied</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+              <div className="space-y-2">
+                <div className="flex items-start gap-2">
+                  <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
+                  <span>Nested fields with {">"} converted to nested objects</span>
                 </div>
-                <div className="space-y-2">
-                  <div className="flex items-start gap-2">
-                    <CheckCircle className="w-4 h-4 text-converter-success mt-0.5" />
-                    <span>Fields with units nested as {`{value, unit}`} objects</span>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <CheckCircle className="w-4 h-4 text-converter-success mt-0.5" />
-                    <span>Empty values converted to null</span>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <CheckCircle className="w-4 h-4 text-converter-success mt-0.5" />
-                    <span>Data types: real, int, string automatically detected</span>
-                  </div>
+                <div className="flex items-start gap-2">
+                  <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
+                  <span>Array values in brackets [like this] parsed as JSON arrays</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
+                  <span>Numeric values auto-converted based on data types</span>
                 </div>
               </div>
-            </CardContent>
-          </Card>
+              <div className="space-y-2">
+                <div className="flex items-start gap-2">
+                  <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
+                  <span>Fields with units nested as {`{value, unit}`} objects</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
+                  <span>Empty values converted to null</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
+                  <span>Data types: real, int, string automatically detected</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
