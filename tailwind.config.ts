@@ -63,6 +63,37 @@ export default {
 					ring: 'hsl(var(--sidebar-ring))'
 				}
 			},
+			colors: {
+				'converter-primary': 'hsl(var(--converter-primary))',
+				'converter-primary-foreground': 'hsl(var(--converter-primary-foreground))',
+				'converter-accent': 'hsl(var(--converter-accent))',
+				'converter-accent-foreground': 'hsl(var(--converter-accent-foreground))',
+				'converter-success': 'hsl(var(--converter-success))',
+				'converter-success-foreground': 'hsl(var(--converter-success-foreground))',
+				'converter-warning': 'hsl(var(--converter-warning))',
+				'converter-warning-foreground': 'hsl(var(--converter-warning-foreground))',
+				'converter-error': 'hsl(var(--converter-error))',
+				'converter-error-foreground': 'hsl(var(--converter-error-foreground))',
+				'code-bg': 'hsl(var(--code-bg))',
+				'code-text': 'hsl(var(--code-text))',
+				'code-border': 'hsl(var(--code-border))',
+				'upload-bg': 'hsl(var(--upload-bg))',
+				'upload-bg-hover': 'hsl(var(--upload-bg-hover))',
+				'upload-border': 'hsl(var(--upload-border))',
+				'upload-border-dashed': 'hsl(var(--upload-border-dashed))',
+			},
+			backgroundImage: {
+				'gradient-primary': 'var(--gradient-primary)',
+				'gradient-success': 'var(--gradient-success)',
+			},
+			boxShadow: {
+				'converter': 'var(--shadow-converter)',
+				'upload': 'var(--shadow-upload)',
+			},
+			transitionTimingFunction: {
+				'smooth': 'var(--transition-smooth)',
+				'spring': 'var(--transition-spring)',
+			},
 			borderRadius: {
 				lg: 'var(--radius)',
 				md: 'calc(var(--radius) - 2px)',
