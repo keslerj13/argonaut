@@ -338,6 +338,51 @@ const Index = () => {
           )}
         </div>
 
+        {/* Instruction Guide */}
+        <div style={{ backgroundColor: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)', padding: '24px' }}>
+          <h2 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <FileText style={{ width: '20px', height: '20px' }} />
+            CSV Format Instructions
+          </h2>
+          
+          <div style={{ marginBottom: '16px' }}>
+            <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>
+              Your CSV file must follow this exact 4-row header structure:
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '8px', fontSize: '14px' }}>
+              <span style={{ fontWeight: '500' }}>Row 1:</span>
+              <span>Field name + data type (e.g., "temperature real")</span>
+              <span style={{ fontWeight: '500' }}>Row 2:</span>
+              <span>Data type only (e.g., "real", "int", "string")</span>
+              <span style={{ fontWeight: '500' }}>Row 3:</span>
+              <span>Units (e.g., "°C", "mm", leave empty if no unit)</span>
+              <span style={{ fontWeight: '500' }}>Row 4:</span>
+              <span>Field names (use {'">"'} for nesting, e.g., "dataSheet{'>'}filename")</span>
+              <span style={{ fontWeight: '500' }}>Row 5+:</span>
+              <span>Your data rows</span>
+            </div>
+          </div>
+
+          <div style={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '16px' }}>
+            <h3 style={{ fontSize: '16px', fontWeight: '500', marginBottom: '12px' }}>Example CSV Template:</h3>
+            <pre style={{ fontSize: '12px', fontFamily: 'monospace', color: '#374151', whiteSpace: 'pre-wrap', margin: 0, overflow: 'auto' }}>
+{`declaredName string,temperature real,pressure int,dataSheet>filename string,dataSheet>size real
+string,real,int,string,real
+,°C,bar,,MB
+declaredName,temperature,pressure,dataSheet>filename,dataSheet>size
+Heat Exchanger A,85.5,12,manual.pdf,2.5
+Heat Exchanger B,92.0,15,specs.pdf,1.8`}
+            </pre>
+          </div>
+
+          <div style={{ marginTop: '16px', padding: '12px', backgroundColor: '#fffbeb', border: '1px solid #fbbf24', borderRadius: '6px' }}>
+            <p style={{ fontSize: '13px', color: '#92400e' }}>
+              💡 <strong>Tip:</strong> The "declaredName" field will be used as the key for each JSON object. 
+              Use {'">"'} in field names to create nested objects (e.g., "dataSheet{'>'}filename" creates {`{dataSheet: {filename: "..."}}`}).
+            </p>
+          </div>
+        </div>
+
         {/* Error Display */}
         {error && (
           <div style={{ backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', padding: '16px' }}>
