@@ -157,7 +157,35 @@ const Index = () => {
     setResult(null);
 
     try {
-      const jsonData = JSON.parse(jsonInput);
+      // Better JSON validation with helpful error messages
+      let jsonData;
+      try {
+        jsonData = JSON.parse(jsonInput);
+      } catch (parseError) {
+        if (parseError instanceof SyntaxError) {
+          const match = parseError.message.match(/position (\d+)/);
+          if (match) {
+            const position = parseInt(match[1]);
+            const lines = jsonInput.substring(0, position).split('\n');
+            const lineNumber = lines.length;
+            const columnNumber = lines[lines.length - 1].length + 1;
+            const problemLine = jsonInput.split('\n')[lineNumber - 1] || '';
+            
+            throw new Error(
+              `JSON syntax error at line ${lineNumber}, column ${columnNumber}:\n` +
+              `"${problemLine.trim()}"\n` +
+              `Error: ${parseError.message}\n\n` +
+              `Common fixes:\n` +
+              `• Check for missing commas between properties\n` +
+              `• Ensure all strings are properly quoted\n` +
+              `• Verify all brackets and braces are closed\n` +
+              `• Remove trailing commas`
+            );
+          }
+        }
+        throw new Error(`Invalid JSON: ${parseError.message}`);
+      }
+      
       console.log('Parsed JSON data:', jsonData);
       
       // Handle both array and object inputs
