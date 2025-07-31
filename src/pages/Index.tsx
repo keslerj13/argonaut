@@ -531,21 +531,49 @@ const Index = () => {
             </div>
           ) : (
             <div>
-              <textarea
-                value={jsonInput}
-                onChange={(e) => setJsonInput(e.target.value)}
-                placeholder="Paste your JSON data here..."
-                style={{
-                  width: '100%',
-                  minHeight: '200px',
-                  padding: '16px',
-                  border: '1px solid #d1d5db',
-                  borderRadius: '8px',
-                  fontSize: '14px',
-                  fontFamily: 'monospace',
-                  resize: 'vertical'
-                }}
-              />
+              <div style={{ position: 'relative', border: '1px solid #d1d5db', borderRadius: '8px', overflow: 'hidden' }}>
+                <div style={{ display: 'flex', minHeight: '200px' }}>
+                  {/* Line numbers */}
+                  <div 
+                    style={{
+                      backgroundColor: '#f8fafc',
+                      borderRight: '1px solid #e2e8f0',
+                      padding: '16px 8px',
+                      fontSize: '14px',
+                      fontFamily: 'monospace',
+                      color: '#6b7280',
+                      lineHeight: '1.5',
+                      userSelect: 'none',
+                      minWidth: '50px',
+                      textAlign: 'right'
+                    }}
+                  >
+                    {jsonInput.split('\n').map((_, index) => (
+                      <div key={index} style={{ height: '21px' }}>
+                        {index + 1}
+                      </div>
+                    ))}
+                  </div>
+                  
+                  {/* Textarea */}
+                  <textarea
+                    value={jsonInput}
+                    onChange={(e) => setJsonInput(e.target.value)}
+                    placeholder="Paste your JSON data here..."
+                    style={{
+                      flex: 1,
+                      minHeight: '200px',
+                      padding: '16px',
+                      border: 'none',
+                      outline: 'none',
+                      fontSize: '14px',
+                      fontFamily: 'monospace',
+                      resize: 'vertical',
+                      lineHeight: '1.5'
+                    }}
+                  />
+                </div>
+              </div>
               
               {jsonInput.trim() && (
                 <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'center' }}>
