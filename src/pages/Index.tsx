@@ -91,8 +91,8 @@ const Index = () => {
       }
       
       return (
-        <div key={lineIndex} style={{ height: '21px', lineHeight: '21px' }}>
-          {parts.length > 0 ? parts : <span style={{ color: '#f9fafb' }}>{line}</span>}
+        <div key={lineIndex} style={{ lineHeight: '21px', minHeight: '21px' }}>
+          {parts.length > 0 ? parts : <span style={{ color: '#f9fafb' }}>{line || '\u00A0'}</span>}
         </div>
       );
     });
