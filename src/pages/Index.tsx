@@ -550,6 +550,7 @@ const Index = () => {
             </div>
            ) : (
             <div>
+              {/* JSON Input */}
               <div style={{ position: 'relative', border: '1px solid #d1d5db', borderRadius: '8px', overflow: 'hidden', backgroundColor: '#1f2937' }}>
                 <div style={{ display: 'flex', minHeight: '200px' }}>
                   {/* Line numbers */}
@@ -574,7 +575,7 @@ const Index = () => {
                     ))}
                   </div>
                   
-                  {/* Textarea with syntax highlighting colors */}
+                  {/* Textarea */}
                   <textarea
                     value={jsonInput}
                     onChange={(e) => setJsonInput(e.target.value)}
@@ -595,6 +596,30 @@ const Index = () => {
                   />
                 </div>
               </div>
+              
+              {/* Syntax Highlighted Preview */}
+              {jsonInput.trim() && (
+                <div style={{ marginTop: '12px', border: '1px solid #d1d5db', borderRadius: '8px', overflow: 'hidden' }}>
+                  <div style={{ backgroundColor: '#f8fafc', padding: '8px 16px', borderBottom: '1px solid #e2e8f0', fontSize: '12px', fontWeight: '500', color: '#6b7280' }}>
+                    Syntax Highlighted Preview
+                  </div>
+                  <div style={{ backgroundColor: 'white', padding: '16px', maxHeight: '300px', overflow: 'auto' }}>
+                    <pre 
+                      style={{
+                        margin: 0,
+                        fontSize: '14px',
+                        fontFamily: 'monospace',
+                        lineHeight: '1.5',
+                        whiteSpace: 'pre-wrap',
+                        wordWrap: 'break-word'
+                      }}
+                      dangerouslySetInnerHTML={{ 
+                        __html: highlightJSON(jsonInput) 
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
               
               {jsonInput.trim() && (
                 <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'center' }}>
