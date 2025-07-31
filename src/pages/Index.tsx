@@ -19,18 +19,20 @@ const Index = () => {
   
   const highlightJSON = (json: string) => {
     return json
-      // Strings
-      .replace(/"([^"\\]|\\.)*"/g, '<span style="color: #059669;">$&</span>')
-      // Numbers
-      .replace(/\b(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\b/g, '<span style="color: #dc2626;">$1</span>')
-      // Booleans
-      .replace(/\b(true|false)\b/g, '<span style="color: #7c3aed;">$1</span>')
-      // Null
-      .replace(/\bnull\b/g, '<span style="color: #6b7280;">$&</span>')
-      // Brackets and braces
-      .replace(/[{}[\]]/g, '<span style="color: #1e40af; font-weight: bold;">$&</span>')
-      // Colons and commas
-      .replace(/[,:]/g, '<span style="color: #374151;">$&</span>');
+      // Strings (green)
+      .replace(/"([^"\\]|\\.)*"/g, '<span style="color: #16a34a; font-weight: 500;">$&</span>')
+      // Numbers (blue)
+      .replace(/\b(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\b/g, '<span style="color: #2563eb; font-weight: 500;">$1</span>')
+      // Booleans (purple)
+      .replace(/\b(true|false)\b/g, '<span style="color: #9333ea; font-weight: 500;">$1</span>')
+      // Null (gray)
+      .replace(/\bnull\b/g, '<span style="color: #6b7280; font-weight: 500;">$&</span>')
+      // Property names (orange)
+      .replace(/"([^"\\]|\\.)*"(?=\s*:)/g, '<span style="color: #ea580c; font-weight: 600;">$&</span>')
+      // Brackets and braces (bold black)
+      .replace(/[{}[\]]/g, '<span style="color: #1f2937; font-weight: bold;">$&</span>')
+      // Colons and commas (dark gray)
+      .replace(/[,:]/g, '<span style="color: #374151; font-weight: 500;">$&</span>');
   };
   
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -548,13 +550,13 @@ const Index = () => {
             </div>
            ) : (
             <div>
-              <div style={{ position: 'relative', border: '1px solid #d1d5db', borderRadius: '8px', overflow: 'hidden' }}>
+              <div style={{ position: 'relative', border: '1px solid #d1d5db', borderRadius: '8px', overflow: 'hidden', backgroundColor: '#1f2937' }}>
                 <div style={{ display: 'flex', minHeight: '200px' }}>
                   {/* Line numbers */}
                   <div 
                     style={{
-                      backgroundColor: '#f8fafc',
-                      borderRight: '1px solid #e2e8f0',
+                      backgroundColor: '#111827',
+                      borderRight: '1px solid #374151',
                       padding: '16px 8px',
                       fontSize: '14px',
                       fontFamily: 'monospace',
@@ -565,60 +567,32 @@ const Index = () => {
                       textAlign: 'right'
                     }}
                   >
-                    {jsonInput.split('\n').map((_, index) => (
+                    {(jsonInput || ' ').split('\n').map((_, index) => (
                       <div key={index} style={{ height: '21px' }}>
                         {index + 1}
                       </div>
                     ))}
                   </div>
                   
-                  {/* Syntax highlighting overlay */}
-                  <div style={{ position: 'relative', flex: 1 }}>
-                    <div 
-                      style={{
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        padding: '16px',
-                        fontSize: '14px',
-                        fontFamily: 'monospace',
-                        lineHeight: '1.5',
-                        whiteSpace: 'pre-wrap',
-                        wordWrap: 'break-word',
-                        pointerEvents: 'none',
-                        color: 'transparent',
-                        overflow: 'hidden'
-                      }}
-                      dangerouslySetInnerHTML={{ 
-                        __html: highlightJSON(jsonInput || '') 
-                      }}
-                    />
-                    
-                    {/* Textarea */}
-                    <textarea
-                      value={jsonInput}
-                      onChange={(e) => setJsonInput(e.target.value)}
-                      placeholder="Paste your JSON data here..."
-                      style={{
-                        position: 'relative',
-                        width: '100%',
-                        height: '100%',
-                        minHeight: '200px',
-                        padding: '16px',
-                        border: 'none',
-                        outline: 'none',
-                        fontSize: '14px',
-                        fontFamily: 'monospace',
-                        resize: 'vertical',
-                        lineHeight: '1.5',
-                        backgroundColor: 'transparent',
-                        color: 'transparent',
-                        caretColor: '#374151'
-                      }}
-                    />
-                  </div>
+                  {/* Textarea with syntax highlighting colors */}
+                  <textarea
+                    value={jsonInput}
+                    onChange={(e) => setJsonInput(e.target.value)}
+                    placeholder="Paste your JSON data here..."
+                    style={{
+                      flex: 1,
+                      minHeight: '200px',
+                      padding: '16px',
+                      border: 'none',
+                      outline: 'none',
+                      fontSize: '14px',
+                      fontFamily: 'monospace',
+                      resize: 'vertical',
+                      lineHeight: '1.5',
+                      backgroundColor: '#1f2937',
+                      color: '#f9fafb'
+                    }}
+                  />
                 </div>
               </div>
               
