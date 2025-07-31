@@ -18,21 +18,34 @@ const Index = () => {
   const [jsonInput, setJsonInput] = useState<string>('');
   
   const highlightJSON = (json: string) => {
-    return json
-      // Strings (green)
-      .replace(/"([^"\\]|\\.)*"/g, '<span style="color: #16a34a; font-weight: 500;">$&</span>')
-      // Numbers (blue)
-      .replace(/\b(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\b/g, '<span style="color: #2563eb; font-weight: 500;">$1</span>')
-      // Booleans (purple)
-      .replace(/\b(true|false)\b/g, '<span style="color: #9333ea; font-weight: 500;">$1</span>')
-      // Null (gray)
-      .replace(/\bnull\b/g, '<span style="color: #6b7280; font-weight: 500;">$&</span>')
-      // Property names (orange)
-      .replace(/"([^"\\]|\\.)*"(?=\s*:)/g, '<span style="color: #ea580c; font-weight: 600;">$&</span>')
-      // Brackets and braces (bold black)
-      .replace(/[{}[\]]/g, '<span style="color: #1f2937; font-weight: bold;">$&</span>')
-      // Colons and commas (dark gray)
-      .replace(/[,:]/g, '<span style="color: #374151; font-weight: 500;">$&</span>');
+    if (!json) return '';
+    
+    try {
+      // First, validate and format the JSON
+      const parsed = JSON.parse(json);
+      const formatted = JSON.stringify(parsed, null, 2);
+      
+      return formatted
+        // Property names (keys) - orange
+        .replace(/"([^"\\]|\\.)*"(?=\s*:)/g, '<span style="color: #ea580c; font-weight: 600;">$&</span>')
+        // String values - green  
+        .replace(/"([^"\\]|\\.)*"(?!\s*:)/g, '<span style="color: #16a34a; font-weight: 500;">$&</span>')
+        // Numbers - blue
+        .replace(/\b(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\b/g, '<span style="color: #2563eb; font-weight: 500;">$1</span>')
+        // Booleans - purple
+        .replace(/\b(true|false)\b/g, '<span style="color: #9333ea; font-weight: 500;">$1</span>')
+        // Null - gray
+        .replace(/\bnull\b/g, '<span style="color: #6b7280; font-weight: 500;">$&</span>')
+        // Brackets and braces - bold dark
+        .replace(/[{}[\]]/g, '<span style="color: #1f2937; font-weight: bold;">$&</span>')
+        // Colons and commas - dark gray
+        .replace(/[,:]/g, '<span style="color: #374151; font-weight: 500;">$&</span>');
+    } catch (e) {
+      // If JSON is invalid, just return the original text with basic highlighting
+      return json
+        .replace(/[{}[\]]/g, '<span style="color: #1f2937; font-weight: bold;">$&</span>')
+        .replace(/[,:]/g, '<span style="color: #374151; font-weight: 500;">$&</span>');
+    }
   };
   
   const fileInputRef = useRef<HTMLInputElement>(null);
