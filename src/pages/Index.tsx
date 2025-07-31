@@ -563,7 +563,7 @@ const Index = () => {
             </div>
            ) : (
             <div>
-              {/* JSON Input */}
+              {/* JSON Input with Syntax Highlighting */}
               <div style={{ position: 'relative', border: '1px solid #d1d5db', borderRadius: '8px', overflow: 'hidden', backgroundColor: '#1f2937' }}>
                 <div style={{ display: 'flex', minHeight: '200px' }}>
                   {/* Line numbers */}
@@ -578,7 +578,8 @@ const Index = () => {
                       lineHeight: '1.5',
                       userSelect: 'none',
                       minWidth: '50px',
-                      textAlign: 'right'
+                      textAlign: 'right',
+                      zIndex: 1
                     }}
                   >
                     {(jsonInput || ' ').split('\n').map((_, index) => (
@@ -588,51 +589,70 @@ const Index = () => {
                     ))}
                   </div>
                   
-                  {/* Textarea */}
-                  <textarea
-                    value={jsonInput}
-                    onChange={(e) => setJsonInput(e.target.value)}
-                    placeholder="Paste your JSON data here..."
-                    style={{
-                      flex: 1,
-                      minHeight: '200px',
-                      padding: '16px',
-                      border: 'none',
-                      outline: 'none',
-                      fontSize: '14px',
-                      fontFamily: 'monospace',
-                      resize: 'vertical',
-                      lineHeight: '1.5',
-                      backgroundColor: '#1f2937',
-                      color: '#f9fafb'
-                    }}
-                  />
-                </div>
-              </div>
-              
-              {/* Syntax Highlighted Preview */}
-              {jsonInput.trim() && (
-                <div style={{ marginTop: '12px', border: '1px solid #d1d5db', borderRadius: '8px', overflow: 'hidden' }}>
-                  <div style={{ backgroundColor: '#f8fafc', padding: '8px 16px', borderBottom: '1px solid #e2e8f0', fontSize: '12px', fontWeight: '500', color: '#6b7280' }}>
-                    Syntax Highlighted Preview
-                  </div>
-                  <div style={{ backgroundColor: 'white', padding: '16px', maxHeight: '300px', overflow: 'auto' }}>
-                    <pre 
+                  {/* Editor area with syntax highlighting */}
+                  <div style={{ position: 'relative', flex: 1, backgroundColor: '#1f2937' }}>
+                    {/* Syntax highlighting background */}
+                    <div
                       style={{
-                        margin: 0,
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        padding: '16px',
                         fontSize: '14px',
                         fontFamily: 'monospace',
                         lineHeight: '1.5',
                         whiteSpace: 'pre-wrap',
-                        wordWrap: 'break-word'
+                        wordWrap: 'break-word',
+                        color: '#f9fafb',
+                        pointerEvents: 'none',
+                        overflow: 'hidden',
+                        zIndex: 1
                       }}
                       dangerouslySetInnerHTML={{ 
-                        __html: highlightJSON(jsonInput) 
+                        __html: highlightJSON(jsonInput || '') 
+                      }}
+                    />
+                    
+                    {/* Transparent textarea overlay */}
+                    <textarea
+                      value={jsonInput}
+                      onChange={(e) => setJsonInput(e.target.value)}
+                      placeholder="Paste your JSON data here..."
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        width: '100%',
+                        height: '100%',
+                        minHeight: '200px',
+                        padding: '16px',
+                        border: 'none',
+                        outline: 'none',
+                        fontSize: '14px',
+                        fontFamily: 'monospace',
+                        lineHeight: '1.5',
+                        backgroundColor: 'transparent',
+                        color: 'transparent',
+                        caretColor: '#60a5fa',
+                        resize: 'vertical',
+                        zIndex: 2
+                      }}
+                      onScroll={(e) => {
+                        const target = e.target as HTMLTextAreaElement;
+                        const highlight = target.previousElementSibling as HTMLElement;
+                        if (highlight) {
+                          highlight.scrollTop = target.scrollTop;
+                          highlight.scrollLeft = target.scrollLeft;
+                        }
                       }}
                     />
                   </div>
                 </div>
-              )}
+              </div>
               
               {jsonInput.trim() && (
                 <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'center' }}>
