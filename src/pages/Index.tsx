@@ -14,6 +14,8 @@ const Index = () => {
   const [result, setResult] = useState<ConversionResult | null>(null);
   const [error, setError] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [mode, setMode] = useState<'csv-to-json' | 'json-to-csv'>('csv-to-json');
+  const [jsonInput, setJsonInput] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const convertValue = (value: string, dataType: string, unit: string) => {
@@ -60,7 +62,140 @@ const Index = () => {
     return convertedValue;
   };
 
+  const processJsonToCSV = () => {
+    if (!jsonInput.trim()) {
+      setError('Please enter JSON data first');
+      return;
+    }
+
+    setIsProcessing(true);
+    setError('');
+    setResult(null);
+
+    try {
+      const jsonData = JSON.parse(jsonInput);
+      
+      // Get all unique field names across all objects
+      const allFields = new Set<string>();
+      const dataTypes = new Set<string>();
+      const nestedFields: string[] = [];
+      
+      const extractFields = (obj: any, prefix = '') => {
+        Object.keys(obj).forEach(key => {
+          const fullKey = prefix ? `${prefix}>${key}` : key;
+          if (typeof obj[key] === 'object' && obj[key] !== null && !Array.isArray(obj[key]) && !obj[key].hasOwnProperty('value')) {
+            extractFields(obj[key], fullKey);
+            if (prefix) nestedFields.push(fullKey);
+          } else {
+            allFields.add(fullKey);
+          }
+        });
+      };
+
+      Object.values(jsonData).forEach((obj: any) => extractFields(obj));
+      
+      // Add declaredName field
+      const fieldsArray = ['declaredName', ...Array.from(allFields)];
+      
+      // Create CSV rows
+      const headerRows: string[][] = [[], [], [], []];
+      
+      fieldsArray.forEach((field, index) => {
+        // Determine data type and unit
+        let dataType = 'string';
+        let unit = '';
+        
+        // Sample first value to determine type
+        const firstValue = Object.values(jsonData)[0] as any;
+        const value = field === 'declaredName' ? 'string' : getNestedValue(firstValue, field);
+        
+        if (value && typeof value === 'object' && value.hasOwnProperty('value') && value.hasOwnProperty('unit')) {
+          unit = value.unit;
+          if (typeof value.value === 'number') {
+            dataType = Number.isInteger(value.value) ? 'int' : 'real';
+          }
+        } else if (typeof value === 'number') {
+          dataType = Number.isInteger(value) ? 'int' : 'real';
+        }
+        
+        dataTypes.add(dataType);
+        
+        // Row 1: field name + data type
+        headerRows[0].push(`${field} ${dataType}`);
+        // Row 2: data type only
+        headerRows[1].push(dataType);
+        // Row 3: unit
+        headerRows[2].push(unit);
+        // Row 4: field name
+        headerRows[3].push(field);
+      });
+      
+      // Create data rows
+      const dataRows: string[][] = [];
+      Object.entries(jsonData).forEach(([declaredName, obj]) => {
+        const row: string[] = [];
+        fieldsArray.forEach(field => {
+          if (field === 'declaredName') {
+            row.push(declaredName);
+          } else {
+            const value = getNestedValue(obj, field);
+            row.push(formatValueForCSV(value));
+          }
+        });
+        dataRows.push(row);
+      });
+      
+      // Convert to CSV string
+      const allRows = [...headerRows, ...dataRows];
+      const csvString = Papa.unparse(allRows);
+      
+      setResult({
+        jsonOutput: csvString,
+        fieldCount: fieldsArray.length,
+        nestedFields,
+        dataTypes: Array.from(dataTypes)
+      });
+
+    } catch (err) {
+      setError('Error processing JSON: ' + (err as Error).message);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const getNestedValue = (obj: any, path: string): any => {
+    if (path.includes('>')) {
+      const parts = path.split('>');
+      let current = obj;
+      for (const part of parts) {
+        if (current && typeof current === 'object') {
+          current = current[part.trim()];
+        } else {
+          return '';
+        }
+      }
+      return current;
+    }
+    return obj[path] || '';
+  };
+
+  const formatValueForCSV = (value: any): string => {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'object' && value.hasOwnProperty('value')) {
+      return String(value.value);
+    }
+    if (Array.isArray(value)) {
+      return `[${value.join(', ')}]`;
+    }
+    return String(value);
+  };
+
   const processFile = async () => {
+    if (mode === 'json-to-csv') {
+      processJsonToCSV();
+      return;
+    }
+
     if (!file) {
       setError('Please select a CSV file first');
       return;
@@ -186,20 +321,26 @@ const Index = () => {
     
     try {
       await navigator.clipboard.writeText(result.jsonOutput);
-      alert('JSON output copied to clipboard!');
+      alert(`${mode === 'csv-to-json' ? 'JSON' : 'CSV'} output copied to clipboard!`);
     } catch (err) {
       alert('Could not copy to clipboard');
     }
   };
 
-  const downloadJson = () => {
+  const downloadOutput = () => {
     if (!result) return;
     
-    const blob = new Blob([result.jsonOutput], { type: 'application/json' });
+    const fileType = mode === 'csv-to-json' ? 'application/json' : 'text/csv';
+    const fileExtension = mode === 'csv-to-json' ? '.json' : '.csv';
+    const fileName = mode === 'csv-to-json' 
+      ? (file?.name.replace('.csv', '.json') || 'converted.json')
+      : 'converted.csv';
+    
+    const blob = new Blob([result.jsonOutput], { type: fileType });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = file?.name.replace('.csv', '.json') || 'converted.json';
+    a.download = fileName;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -257,83 +398,174 @@ const Index = () => {
           </div>
           <div>
             <h1 style={{ fontSize: '36px', fontWeight: 'bold', color: '#1e293b', marginBottom: '8px' }}>
-              CSV to JSON Converter
+              {mode === 'csv-to-json' ? 'CSV to JSON Converter' : 'JSON to CSV Converter'}
             </h1>
             <p style={{ fontSize: '18px', color: '#64748b' }}>
-              Convert structured CSV files to JSON with advanced mapping rules
+              {mode === 'csv-to-json' 
+                ? 'Convert structured CSV files to JSON with advanced mapping rules'
+                : 'Convert JSON back to structured CSV format with proper headers'
+              }
             </p>
           </div>
         </div>
 
-        {/* File Upload */}
+        {/* Mode Toggle */}
+        <div style={{ backgroundColor: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)', padding: '24px' }}>
+          <h2 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '16px' }}>Conversion Mode</h2>
+          <div style={{ display: 'flex', gap: '8px', backgroundColor: '#f8fafc', padding: '4px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+            <button
+              onClick={() => {
+                setMode('csv-to-json');
+                setError('');
+                setResult(null);
+              }}
+              style={{
+                flex: 1,
+                padding: '8px 16px',
+                borderRadius: '6px',
+                border: 'none',
+                fontWeight: '500',
+                cursor: 'pointer',
+                backgroundColor: mode === 'csv-to-json' ? '#3b82f6' : 'transparent',
+                color: mode === 'csv-to-json' ? 'white' : '#64748b'
+              }}
+            >
+              CSV → JSON
+            </button>
+            <button
+              onClick={() => {
+                setMode('json-to-csv');
+                setError('');
+                setResult(null);
+              }}
+              style={{
+                flex: 1,
+                padding: '8px 16px',
+                borderRadius: '6px',
+                border: 'none',
+                fontWeight: '500',
+                cursor: 'pointer',
+                backgroundColor: mode === 'json-to-csv' ? '#3b82f6' : 'transparent',
+                color: mode === 'json-to-csv' ? 'white' : '#64748b'
+              }}
+            >
+              JSON → CSV
+            </button>
+          </div>
+        </div>
+
+        {/* Input Section */}
         <div style={{ backgroundColor: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)', padding: '24px' }}>
           <h2 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Upload style={{ width: '20px', height: '20px' }} />
-            Upload CSV File
+            {mode === 'csv-to-json' ? 'Upload CSV File' : 'Paste JSON Data'}
           </h2>
-          <div
-            style={{
-              border: '2px dashed #cbd5e1',
-              borderRadius: '8px',
-              padding: '32px',
-              textAlign: 'center',
-              transition: 'all 0.3s ease',
-              cursor: 'pointer'
-            }}
-            onDrop={handleDrop}
-            onDragOver={handleDragOver}
-            onClick={() => fileInputRef.current?.click()}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.borderColor = '#3b82f6';
-              e.currentTarget.style.backgroundColor = '#f8fafc';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.borderColor = '#cbd5e1';
-              e.currentTarget.style.backgroundColor = 'transparent';
-            }}
-          >
-            <Upload style={{ width: '48px', height: '48px', color: '#9ca3af', margin: '0 auto 16px' }} />
-            {file ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <p style={{ fontSize: '14px', fontWeight: '500', color: '#059669' }}>{file.name}</p>
-                <p style={{ fontSize: '12px', color: '#6b7280' }}>
-                  {(file.size / 1024).toFixed(1)} KB
-                </p>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <p style={{ fontSize: '14px', fontWeight: '500' }}>Drop your CSV file here or click to browse</p>
-                <p style={{ fontSize: '12px', color: '#6b7280' }}>
-                  Format: 4 header rows (field+type, data type, unit, field name) + multiple data rows
-                </p>
-              </div>
-            )}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".csv"
-              onChange={handleFileSelect}
-              style={{ display: 'none' }}
-            />
-          </div>
-          
-          {file && (
-            <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'center' }}>
-              <button 
-                onClick={processFile} 
-                disabled={isProcessing}
-                style={{ 
-                  backgroundColor: isProcessing ? '#9ca3af' : '#059669', 
-                  color: 'white', 
-                  padding: '8px 24px', 
-                  borderRadius: '8px', 
-                  fontWeight: '500', 
-                  border: 'none',
-                  cursor: isProcessing ? 'not-allowed' : 'pointer'
+
+          {mode === 'csv-to-json' ? (
+            <div>
+              <div
+                style={{
+                  border: '2px dashed #cbd5e1',
+                  borderRadius: '8px',
+                  padding: '32px',
+                  textAlign: 'center',
+                  transition: 'all 0.3s ease',
+                  cursor: 'pointer'
+                }}
+                onDrop={handleDrop}
+                onDragOver={handleDragOver}
+                onClick={() => fileInputRef.current?.click()}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = '#3b82f6';
+                  e.currentTarget.style.backgroundColor = '#f8fafc';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = '#cbd5e1';
+                  e.currentTarget.style.backgroundColor = 'transparent';
                 }}
               >
-                {isProcessing ? 'Processing...' : 'Convert to JSON'}
-              </button>
+                <Upload style={{ width: '48px', height: '48px', color: '#9ca3af', margin: '0 auto 16px' }} />
+                {file ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <p style={{ fontSize: '14px', fontWeight: '500', color: '#059669' }}>{file.name}</p>
+                    <p style={{ fontSize: '12px', color: '#6b7280' }}>
+                      {(file.size / 1024).toFixed(1)} KB
+                    </p>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <p style={{ fontSize: '14px', fontWeight: '500' }}>Drop your CSV file here or click to browse</p>
+                    <p style={{ fontSize: '12px', color: '#6b7280' }}>
+                      Format: 4 header rows (field+type, data type, unit, field name) + multiple data rows
+                    </p>
+                  </div>
+                )}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".csv"
+                  onChange={handleFileSelect}
+                  style={{ display: 'none' }}
+                />
+              </div>
+              
+              {file && (
+                <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'center' }}>
+                  <button 
+                    onClick={processFile} 
+                    disabled={isProcessing}
+                    style={{ 
+                      backgroundColor: isProcessing ? '#9ca3af' : '#059669', 
+                      color: 'white', 
+                      padding: '8px 24px', 
+                      borderRadius: '8px', 
+                      fontWeight: '500', 
+                      border: 'none',
+                      cursor: isProcessing ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    {isProcessing ? 'Processing...' : 'Convert to JSON'}
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div>
+              <textarea
+                value={jsonInput}
+                onChange={(e) => setJsonInput(e.target.value)}
+                placeholder="Paste your JSON data here..."
+                style={{
+                  width: '100%',
+                  minHeight: '200px',
+                  padding: '16px',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontFamily: 'monospace',
+                  resize: 'vertical'
+                }}
+              />
+              
+              {jsonInput.trim() && (
+                <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'center' }}>
+                  <button 
+                    onClick={processFile} 
+                    disabled={isProcessing}
+                    style={{ 
+                      backgroundColor: isProcessing ? '#9ca3af' : '#059669', 
+                      color: 'white', 
+                      padding: '8px 24px', 
+                      borderRadius: '8px', 
+                      fontWeight: '500', 
+                      border: 'none',
+                      cursor: isProcessing ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    {isProcessing ? 'Processing...' : 'Convert to CSV'}
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -416,7 +648,9 @@ Heat Exchanger B,92.0,15,specs.pdf,1.8`}
                   <div style={{ fontSize: '14px', color: '#64748b' }}>Data Types</div>
                 </div>
                  <div style={{ textAlign: 'center', padding: '16px', backgroundColor: '#f8fafc', borderRadius: '8px' }}>
-                   <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#dc2626' }}>{Object.keys(JSON.parse(result.jsonOutput)).length}</div>
+                   <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#dc2626' }}>
+                     {mode === 'csv-to-json' ? Object.keys(JSON.parse(result.jsonOutput)).length : result.jsonOutput.split('\n').length - 4}
+                   </div>
                    <div style={{ fontSize: '14px', color: '#64748b' }}>Data Rows</div>
                  </div>
               </div>
@@ -433,10 +667,12 @@ Heat Exchanger B,92.0,15,specs.pdf,1.8`}
               )}
             </div>
 
-            {/* JSON Output */}
+            {/* Output */}
             <div style={{ backgroundColor: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)', padding: '24px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-                <h2 style={{ fontSize: '20px', fontWeight: '600' }}>Generated JSON</h2>
+                <h2 style={{ fontSize: '20px', fontWeight: '600' }}>
+                  {mode === 'csv-to-json' ? 'Generated JSON' : 'Generated CSV'}
+                </h2>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <button
                     onClick={copyToClipboard}
@@ -446,7 +682,7 @@ Heat Exchanger B,92.0,15,specs.pdf,1.8`}
                     Copy
                   </button>
                   <button
-                    onClick={downloadJson}
+                    onClick={downloadOutput}
                     style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 12px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '14px', backgroundColor: 'white', cursor: 'pointer' }}
                   >
                     <Download style={{ width: '16px', height: '16px' }} />
