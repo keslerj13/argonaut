@@ -49,26 +49,26 @@ const Index = () => {
           // Check if it's a property name (followed by colon)
           const afterToken = line.slice(match.index + token.length).trim();
           if (afterToken.startsWith(':')) {
-            color = '#ea580c'; // Orange for property names
+            color = '#fbbf24'; // Bright yellow/orange for property names
             fontWeight = '600';
           } else {
-            color = '#16a34a'; // Green for string values
+            color = '#34d399'; // Bright green for string values
             fontWeight = '500';
           }
         } else if (/^-?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(token)) {
-          color = '#2563eb'; // Blue for numbers
+          color = '#60a5fa'; // Bright blue for numbers
           fontWeight = '500';
         } else if (token === 'true' || token === 'false') {
-          color = '#9333ea'; // Purple for booleans
+          color = '#a78bfa'; // Bright purple for booleans
           fontWeight = '500';
         } else if (token === 'null') {
-          color = '#6b7280'; // Gray for null
+          color = '#9ca3af'; // Light gray for null
           fontWeight = '500';
         } else if (/[{}[\]]/.test(token)) {
-          color = '#1f2937'; // Dark for brackets/braces
+          color = '#f87171'; // Bright red for brackets/braces
           fontWeight = 'bold';
         } else if (/[,:]/.test(token)) {
-          color = '#374151'; // Dark gray for punctuation
+          color = '#e5e7eb'; // Light gray for punctuation
           fontWeight = '500';
         }
         
