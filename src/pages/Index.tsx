@@ -17,35 +17,85 @@ const Index = () => {
   const [mode, setMode] = useState<'csv-to-json' | 'json-to-csv'>('csv-to-json');
   const [jsonInput, setJsonInput] = useState<string>('');
   
-  const highlightJSON = (json: string) => {
-    if (!json) return '';
+  const renderHighlightedJSON = (json: string) => {
+    if (!json) return null;
     
-    try {
-      // First, validate and format the JSON
-      const parsed = JSON.parse(json);
-      const formatted = JSON.stringify(parsed, null, 2);
+    const lines = json.split('\n');
+    return lines.map((line, lineIndex) => {
+      const parts: JSX.Element[] = [];
+      let remaining = line;
+      let partIndex = 0;
       
-      return formatted
-        // Property names (keys) - orange
-        .replace(/"([^"\\]|\\.)*"(?=\s*:)/g, '<span style="color: #ea580c; font-weight: 600;">$&</span>')
-        // String values - green  
-        .replace(/"([^"\\]|\\.)*"(?!\s*:)/g, '<span style="color: #16a34a; font-weight: 500;">$&</span>')
-        // Numbers - blue
-        .replace(/\b(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\b/g, '<span style="color: #2563eb; font-weight: 500;">$1</span>')
-        // Booleans - purple
-        .replace(/\b(true|false)\b/g, '<span style="color: #9333ea; font-weight: 500;">$1</span>')
-        // Null - gray
-        .replace(/\bnull\b/g, '<span style="color: #6b7280; font-weight: 500;">$&</span>')
-        // Brackets and braces - bold dark
-        .replace(/[{}[\]]/g, '<span style="color: #1f2937; font-weight: bold;">$&</span>')
-        // Colons and commas - dark gray
-        .replace(/[,:]/g, '<span style="color: #374151; font-weight: 500;">$&</span>');
-    } catch (e) {
-      // If JSON is invalid, just return the original text with basic highlighting
-      return json
-        .replace(/[{}[\]]/g, '<span style="color: #1f2937; font-weight: bold;">$&</span>')
-        .replace(/[,:]/g, '<span style="color: #374151; font-weight: 500;">$&</span>');
-    }
+      // Simple tokenization for JSON
+      const tokenRegex = /"([^"\\]|\\.)*"|[{}[\],:]|\b(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\b|\b(true|false|null)\b/g;
+      let match;
+      let lastIndex = 0;
+      
+      while ((match = tokenRegex.exec(line)) !== null) {
+        // Add text before match
+        if (match.index > lastIndex) {
+          parts.push(
+            <span key={`${lineIndex}-${partIndex++}`} style={{ color: '#f9fafb' }}>
+              {line.slice(lastIndex, match.index)}
+            </span>
+          );
+        }
+        
+        const token = match[0];
+        let color = '#f9fafb';
+        let fontWeight = 'normal';
+        
+        if (token.startsWith('"')) {
+          // Check if it's a property name (followed by colon)
+          const afterToken = line.slice(match.index + token.length).trim();
+          if (afterToken.startsWith(':')) {
+            color = '#ea580c'; // Orange for property names
+            fontWeight = '600';
+          } else {
+            color = '#16a34a'; // Green for string values
+            fontWeight = '500';
+          }
+        } else if (/^-?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(token)) {
+          color = '#2563eb'; // Blue for numbers
+          fontWeight = '500';
+        } else if (token === 'true' || token === 'false') {
+          color = '#9333ea'; // Purple for booleans
+          fontWeight = '500';
+        } else if (token === 'null') {
+          color = '#6b7280'; // Gray for null
+          fontWeight = '500';
+        } else if (/[{}[\]]/.test(token)) {
+          color = '#1f2937'; // Dark for brackets/braces
+          fontWeight = 'bold';
+        } else if (/[,:]/.test(token)) {
+          color = '#374151'; // Dark gray for punctuation
+          fontWeight = '500';
+        }
+        
+        parts.push(
+          <span key={`${lineIndex}-${partIndex++}`} style={{ color, fontWeight }}>
+            {token}
+          </span>
+        );
+        
+        lastIndex = match.index + token.length;
+      }
+      
+      // Add remaining text
+      if (lastIndex < line.length) {
+        parts.push(
+          <span key={`${lineIndex}-${partIndex++}`} style={{ color: '#f9fafb' }}>
+            {line.slice(lastIndex)}
+          </span>
+        );
+      }
+      
+      return (
+        <div key={lineIndex} style={{ height: '21px', lineHeight: '21px' }}>
+          {parts.length > 0 ? parts : <span style={{ color: '#f9fafb' }}>{line}</span>}
+        </div>
+      );
+    });
   };
   
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -610,10 +660,9 @@ const Index = () => {
                         overflow: 'hidden',
                         zIndex: 1
                       }}
-                      dangerouslySetInnerHTML={{ 
-                        __html: highlightJSON(jsonInput || '') 
-                      }}
-                    />
+                    >
+                      {renderHighlightedJSON(jsonInput || '')}
+                    </div>
                     
                     {/* Transparent textarea overlay */}
                     <textarea
