@@ -651,14 +651,15 @@ const Index = () => {
                         bottom: 0,
                         padding: '16px',
                         fontSize: '14px',
-                        fontFamily: 'monospace',
-                        lineHeight: '1.5',
+                        fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+                        lineHeight: '21px',
                         whiteSpace: 'pre-wrap',
                         wordWrap: 'break-word',
                         color: '#f9fafb',
                         pointerEvents: 'none',
                         overflow: 'hidden',
-                        zIndex: 1
+                        zIndex: 1,
+                        boxSizing: 'border-box'
                       }}
                     >
                       {renderHighlightedJSON(jsonInput || '')}
@@ -682,13 +683,14 @@ const Index = () => {
                         border: 'none',
                         outline: 'none',
                         fontSize: '14px',
-                        fontFamily: 'monospace',
-                        lineHeight: '1.5',
+                        fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+                        lineHeight: '21px',
                         backgroundColor: 'transparent',
                         color: 'transparent',
                         caretColor: '#60a5fa',
                         resize: 'vertical',
-                        zIndex: 2
+                        zIndex: 2,
+                        boxSizing: 'border-box'
                       }}
                       onScroll={(e) => {
                         const target = e.target as HTMLTextAreaElement;
