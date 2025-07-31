@@ -145,6 +145,8 @@ const Index = () => {
   };
 
   const processJsonToCSV = () => {
+    console.log('Starting JSON to CSV conversion...');
+    
     if (!jsonInput.trim()) {
       setError('Please enter JSON data first');
       return;
@@ -156,6 +158,28 @@ const Index = () => {
 
     try {
       const jsonData = JSON.parse(jsonInput);
+      console.log('Parsed JSON data:', jsonData);
+      
+      // Handle both array and object inputs
+      let dataArray: any[] = [];
+      
+      if (Array.isArray(jsonData)) {
+        dataArray = jsonData;
+        console.log('Input is an array with', dataArray.length, 'items');
+      } else if (typeof jsonData === 'object' && jsonData !== null) {
+        // Convert object to array of objects with declaredName
+        dataArray = Object.entries(jsonData).map(([key, value]) => ({
+          declaredName: key,
+          ...(typeof value === 'object' ? value : { value })
+        }));
+        console.log('Converted object to array with', dataArray.length, 'items');
+      } else {
+        throw new Error('JSON must be an array of objects or an object');
+      }
+      
+      if (dataArray.length === 0) {
+        throw new Error('No data found to convert');
+      }
       
       // Get all unique field names across all objects
       const allFields = new Set<string>();
@@ -163,8 +187,10 @@ const Index = () => {
       const nestedFields: string[] = [];
       
       const extractFields = (obj: any, prefix = '') => {
+        if (!obj || typeof obj !== 'object') return;
+        
         Object.keys(obj).forEach(key => {
-          const fullKey = prefix ? `${prefix}>${key}` : key;
+          const fullKey = prefix ? `${prefix}.${key}` : key;
           if (typeof obj[key] === 'object' && obj[key] !== null && !Array.isArray(obj[key]) && !obj[key].hasOwnProperty('value')) {
             extractFields(obj[key], fullKey);
             if (prefix) nestedFields.push(fullKey);
@@ -174,62 +200,81 @@ const Index = () => {
         });
       };
 
-      Object.values(jsonData).forEach((obj: any) => extractFields(obj));
+      dataArray.forEach((obj, index) => {
+        console.log(`Extracting fields from object ${index}:`, obj);
+        extractFields(obj);
+      });
       
-      // Add declaredName field
-      const fieldsArray = ['declaredName', ...Array.from(allFields)];
+      const fieldsArray = Array.from(allFields);
+      console.log('Extracted fields:', fieldsArray);
+      
+      if (fieldsArray.length === 0) {
+        throw new Error('No fields found in the data');
+      }
       
       // Create CSV rows
       const headerRows: string[][] = [[], [], [], []];
       
-      fieldsArray.forEach((field, index) => {
+      fieldsArray.forEach((field) => {
         // Determine data type and unit
         let dataType = 'string';
         let unit = '';
         
-        // Sample first value to determine type
-        const firstValue = Object.values(jsonData)[0] as any;
-        const value = field === 'declaredName' ? 'string' : getNestedValue(firstValue, field);
-        
-        if (value && typeof value === 'object' && value.hasOwnProperty('value') && value.hasOwnProperty('unit')) {
-          unit = value.unit;
-          if (typeof value.value === 'number') {
-            dataType = Number.isInteger(value.value) ? 'int' : 'real';
+        // Sample first non-null value to determine type
+        let sampleValue = null;
+        for (const obj of dataArray) {
+          const value = getNestedValue(obj, field);
+          if (value !== null && value !== undefined) {
+            sampleValue = value;
+            break;
           }
-        } else if (typeof value === 'number') {
-          dataType = Number.isInteger(value) ? 'int' : 'real';
+        }
+        
+        if (sampleValue && typeof sampleValue === 'object' && sampleValue.hasOwnProperty('value') && sampleValue.hasOwnProperty('unit')) {
+          unit = sampleValue.unit;
+          if (typeof sampleValue.value === 'number') {
+            dataType = Number.isInteger(sampleValue.value) ? 'int' : 'real';
+          }
+        } else if (typeof sampleValue === 'number') {
+          dataType = Number.isInteger(sampleValue) ? 'int' : 'real';
+        } else if (typeof sampleValue === 'boolean') {
+          dataType = 'boolean';
+        } else if (Array.isArray(sampleValue)) {
+          dataType = 'array';
         }
         
         dataTypes.add(dataType);
         
         // Row 1: field name + data type
-        headerRows[0].push(`${field} ${dataType}`);
+        headerRows[0].push(unit ? `${field}+unit` : field);
         // Row 2: data type only
         headerRows[1].push(dataType);
         // Row 3: unit
         headerRows[2].push(unit);
         // Row 4: field name
-        headerRows[3].push(field);
+        headerRows[3].push(field.split('.').pop() || field);
       });
       
       // Create data rows
       const dataRows: string[][] = [];
-      Object.entries(jsonData).forEach(([declaredName, obj]) => {
+      dataArray.forEach((obj, index) => {
+        console.log(`Creating CSV row for object ${index}`);
         const row: string[] = [];
         fieldsArray.forEach(field => {
-          if (field === 'declaredName') {
-            row.push(declaredName);
-          } else {
-            const value = getNestedValue(obj, field);
-            row.push(formatValueForCSV(value));
-          }
+          const value = getNestedValue(obj, field);
+          const formatted = formatValueForCSV(value);
+          row.push(formatted);
         });
         dataRows.push(row);
       });
       
+      console.log('Created', dataRows.length, 'data rows');
+      
       // Convert to CSV string
       const allRows = [...headerRows, ...dataRows];
       const csvString = Papa.unparse(allRows);
+      
+      console.log('Generated CSV string length:', csvString.length);
       
       setResult({
         jsonOutput: csvString,
@@ -238,7 +283,10 @@ const Index = () => {
         dataTypes: Array.from(dataTypes)
       });
 
+      console.log('Conversion completed successfully');
+
     } catch (err) {
+      console.error('Error processing JSON:', err);
       setError('Error processing JSON: ' + (err as Error).message);
     } finally {
       setIsProcessing(false);
@@ -246,19 +294,22 @@ const Index = () => {
   };
 
   const getNestedValue = (obj: any, path: string): any => {
-    if (path.includes('>')) {
-      const parts = path.split('>');
+    if (!obj) return null;
+    
+    if (path.includes('.')) {
+      const parts = path.split('.');
       let current = obj;
       for (const part of parts) {
-        if (current && typeof current === 'object') {
-          current = current[part.trim()];
+        if (current && typeof current === 'object' && part in current) {
+          current = current[part];
         } else {
-          return '';
+          return null;
         }
       }
       return current;
     }
-    return obj[path] || '';
+    
+    return obj[path];
   };
 
   const formatValueForCSV = (value: any): string => {
