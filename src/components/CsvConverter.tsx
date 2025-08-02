@@ -96,7 +96,7 @@ const CsvConverter = () => {
       const headers = rows[0];
       
       // Validate required columns
-      const requiredColumns = ['Object', 'Data Type'];
+      const requiredColumns = ['declared_name', 'Object', 'Data Type'];
       const missingColumns = requiredColumns.filter(col => !headers.includes(col));
       if (missingColumns.length > 0) {
         setError(`Missing required columns: ${missingColumns.join(', ')}`);
@@ -106,6 +106,7 @@ const CsvConverter = () => {
       // Find column indices
       const getColumnIndex = (columnName: string) => headers.findIndex(h => h === columnName);
       
+      const declaredNameIndex = getColumnIndex('declared_name');
       const objectIndex = getColumnIndex('Object');
       const dataTypeIndex = getColumnIndex('Data Type');
       
@@ -133,11 +134,13 @@ const CsvConverter = () => {
       for (let rowIndex = 0; rowIndex < dataRows.length; rowIndex++) {
         const row = dataRows[rowIndex];
         
+        const declaredNameValue = row[declaredNameIndex];
         const objectName = row[objectIndex];
         const dataType = row[dataTypeIndex];
         
         // Skip empty rows
-        if (!objectName || objectName.trim() === '') continue;
+        if (!declaredNameValue || declaredNameValue.trim() === '' || 
+            !objectName || objectName.trim() === '') continue;
         
         if (dataType && dataType.trim()) {
           dataTypes.add(dataType.trim());
@@ -168,7 +171,7 @@ const CsvConverter = () => {
           const value = row[i];
           
           // Skip system columns and empty values
-          if (header === 'Object' || header === 'Data Type' || 
+          if (header === 'declared_name' || header === 'Object' || header === 'Data Type' || 
               header.startsWith('nested_object_') || 
               !value || value.trim() === '') {
             continue;
@@ -177,10 +180,15 @@ const CsvConverter = () => {
           // Convert the value
           const convertedValue = convertValue(value, dataType, '');
           
-          // Build the nested structure
-          let current = jsonObject;
+          // Ensure the declared_name object exists
+          if (!jsonObject[declaredNameValue]) {
+            jsonObject[declaredNameValue] = {};
+          }
           
-          // Navigate through the nesting path
+          // Build the nested structure within the declared_name object
+          let current = jsonObject[declaredNameValue];
+          
+          // Navigate through the nesting path (Object + nested_object_N)
           for (let j = 0; j < nestingPath.length; j++) {
             const pathPart = nestingPath[j];
             
@@ -314,7 +322,7 @@ const CsvConverter = () => {
             <div className="space-y-2">
               <p className="text-sm font-medium">Drop your CSV file here or click to browse</p>
               <p className="text-xs text-gray-500">
-                Must have Object, Data Type, and optional nested_object_N columns
+                Must have declared_name, Object, Data Type, and optional nested_object_N columns
               </p>
             </div>
           )}

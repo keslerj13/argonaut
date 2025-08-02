@@ -392,7 +392,7 @@ const Index = () => {
       const headers = rows[0];
       
       // Validate required columns
-      const requiredColumns = ['Object', 'Data Type'];
+      const requiredColumns = ['declared_name', 'Object', 'Data Type'];
       const missingColumns = requiredColumns.filter(col => !headers.includes(col));
       if (missingColumns.length > 0) {
         setError(`Missing required columns: ${missingColumns.join(', ')}`);
@@ -402,6 +402,7 @@ const Index = () => {
       // Find column indices
       const getColumnIndex = (columnName: string) => headers.findIndex(h => h === columnName);
       
+      const declaredNameIndex = getColumnIndex('declared_name');
       const objectIndex = getColumnIndex('Object');
       const dataTypeIndex = getColumnIndex('Data Type');
       
@@ -429,11 +430,13 @@ const Index = () => {
       for (let rowIndex = 0; rowIndex < dataRows.length; rowIndex++) {
         const row = dataRows[rowIndex];
         
+        const declaredNameValue = row[declaredNameIndex];
         const objectName = row[objectIndex];
         const dataType = row[dataTypeIndex];
         
         // Skip empty rows
-        if (!objectName || objectName.trim() === '') continue;
+        if (!declaredNameValue || declaredNameValue.trim() === '' || 
+            !objectName || objectName.trim() === '') continue;
         
         if (dataType && dataType.trim()) {
           dataTypes.add(dataType.trim());
@@ -464,7 +467,7 @@ const Index = () => {
           const value = row[i];
           
           // Skip system columns and empty values
-          if (header === 'Object' || header === 'Data Type' || 
+          if (header === 'declared_name' || header === 'Object' || header === 'Data Type' || 
               header.startsWith('nested_object_') || 
               !value || value.trim() === '') {
             continue;
@@ -473,10 +476,15 @@ const Index = () => {
           // Convert the value
           const convertedValue = convertValue(value, dataType, '');
           
-          // Build the nested structure
-          let current = jsonObject;
+          // Ensure the declared_name object exists
+          if (!jsonObject[declaredNameValue]) {
+            jsonObject[declaredNameValue] = {};
+          }
           
-          // Navigate through the nesting path
+          // Build the nested structure within the declared_name object
+          let current = jsonObject[declaredNameValue];
+          
+          // Navigate through the nesting path (Object + nested_object_N)
           for (let j = 0; j < nestingPath.length; j++) {
             const pathPart = nestingPath[j];
             
@@ -857,6 +865,8 @@ const Index = () => {
               Your CSV file must have these required columns:
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '8px', fontSize: '14px' }}>
+              <span style={{ fontWeight: '500' }}>declared_name:</span>
+              <span>The top-level object key (e.g., "Heat Exchanger A")</span>
               <span style={{ fontWeight: '500' }}>Object:</span>
               <span>The main object name (e.g., "Attribute")</span>
               <span style={{ fontWeight: '500' }}>Data Type:</span>
@@ -873,17 +883,18 @@ const Index = () => {
           <div style={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '16px' }}>
             <h3 style={{ fontSize: '16px', fontWeight: '500', marginBottom: '12px' }}>Example CSV Template:</h3>
             <pre style={{ fontSize: '12px', fontFamily: 'monospace', color: '#374151', whiteSpace: 'pre-wrap', margin: 0, overflow: 'auto' }}>
-{`Object,Data Type,nested_object_1,nested_object_2,value,unit
-Attribute,real,additional,operating_temperature_min,5,
-Attribute,string,additional,operating_temperature_min,,degrees celsius
-Attribute,real,electrical,voltage_max,24,V
-Attribute,int,electrical,current_max,2,A`}
+{`declared_name,Object,Data Type,nested_object_1,nested_object_2,value,unit
+Heat Exchanger A,Attribute,real,additional,operating_temperature_min,5,
+Heat Exchanger A,Attribute,string,additional,operating_temperature_min,,degrees celsius
+Heat Exchanger B,Attribute,real,electrical,voltage_max,24,V
+Heat Exchanger B,Attribute,int,electrical,current_max,2,A`}
             </pre>
           </div>
 
           <div style={{ marginTop: '16px', padding: '12px', backgroundColor: '#fffbeb', border: '1px solid #fbbf24', borderRadius: '6px' }}>
             <p style={{ fontSize: '13px', color: '#92400e' }}>
-              💡 <strong>Tip:</strong> Use multiple rows with the same nesting path to add multiple properties. 
+              💡 <strong>Tip:</strong> The "declared_name" field creates the top-level object keys. 
+              Use multiple rows with the same declared_name and nesting path to add multiple properties. 
               For example, both "value" and "unit" can be added to the same nested object by using separate rows.
             </p>
           </div>
