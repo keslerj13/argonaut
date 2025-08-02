@@ -97,13 +97,16 @@ const CsvConverter = () => {
       let dataStartRow = -1;
       let nestingLevels = 0;
       
+      console.log('Detecting header structure from CSV rows:', rows.slice(0, 8));
+      
       // Find declared_name column and detect nesting levels
       for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
         const row = rows[rowIndex];
         for (let colIndex = 0; colIndex < row.length; colIndex++) {
           const cell = row[colIndex];
-          if (cell && cell.toLowerCase().includes('declared_name')) {
+          if (cell && cell.toLowerCase().trim().includes('declared_name')) {
             declaredNameCol = colIndex;
+            console.log(`Found declared_name at row ${rowIndex}, col ${colIndex}:`, cell);
           }
           
           // Count nested_object_n patterns to determine nesting levels
@@ -115,24 +118,36 @@ const CsvConverter = () => {
         }
         
         // Find where data rows start (after all header rows)
-        const hasNestedObjectPattern = row.some(cell => 
-          cell && (cell.match(/nested_object_\d+/i) || cell.toLowerCase().includes('object') || cell.toLowerCase().includes('declared_name'))
+        // Look for rows that don't contain header-like patterns
+        const hasHeaderPattern = row.some(cell => 
+          cell && (
+            cell.toLowerCase().includes('requirement') ||
+            cell.toLowerCase().includes('data_type') ||
+            cell.toLowerCase().includes('object') ||
+            cell.toLowerCase().includes('nested_object') ||
+            cell.toLowerCase().includes('declared_name')
+          )
         );
         
-        if (!hasNestedObjectPattern && dataStartRow === -1 && rowIndex > 0) {
+        if (!hasHeaderPattern && dataStartRow === -1 && rowIndex > 0) {
           dataStartRow = rowIndex;
+          console.log('Data rows start at row:', rowIndex);
           break;
         }
       }
       
+      console.log('Detection results:', { declaredNameCol, dataStartRow, nestingLevels });
+      
       if (declaredNameCol === -1) {
-        setError('Could not find declared_name column in CSV headers');
+        console.error('Available header data:', rows.slice(0, 8));
+        setError('Could not find declared_name column in CSV headers. Please ensure one of the header cells contains "declared_name".');
         return;
       }
       
       if (dataStartRow === -1) {
-        setError('Could not determine where data rows start');
-        return;
+        // If we can't auto-detect, assume data starts after 7 header rows (based on your image)
+        dataStartRow = 7;
+        console.log('Could not auto-detect data start, assuming row 7');
       }
       
       // Extract header rows dynamically
