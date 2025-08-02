@@ -95,31 +95,36 @@ const CsvConverter = () => {
       // Dynamically detect header structure
       let declaredNameCol = -1;
       let dataStartRow = -1;
-      let nestingLevels = 0;
+      let dataTypeRow = -1;
+      let requirementClassRow = -1;
       
       console.log('Detecting header structure from CSV rows:', rows.slice(0, 8));
       
-      // Find declared_name column and detect nesting levels
+      // Find declared_name column and identify important rows
       for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
         const row = rows[rowIndex];
-        console.log(`Row ${rowIndex}:`, row.slice(0, 10)); // Log first 10 columns
+        console.log(`Row ${rowIndex}:`, row.slice(0, 10));
+        
         for (let colIndex = 0; colIndex < row.length; colIndex++) {
           const cell = row[colIndex];
           if (cell && cell.toLowerCase().trim() === 'declared_name') {
             declaredNameCol = colIndex;
-            console.log(`Found declared_name at row ${rowIndex}, col ${colIndex}:`, cell);
-          }
-          
-          // Count nested_object_n patterns to determine nesting levels
-          const nestedMatch = cell && cell.match(/nested_object_(\d+)/i);
-          if (nestedMatch) {
-            const level = parseInt(nestedMatch[1]);
-            nestingLevels = Math.max(nestingLevels, level);
+            console.log(`Found declared_name at row ${rowIndex}, col ${colIndex}`);
           }
         }
         
+        // Identify special rows
+        const firstCell = row[0]?.toLowerCase().trim() || '';
+        if (firstCell.includes('requirement') && firstCell.includes('class')) {
+          requirementClassRow = rowIndex;
+          console.log('Found requirement class row:', rowIndex);
+        }
+        if (firstCell.includes('data') && firstCell.includes('type')) {
+          dataTypeRow = rowIndex;
+          console.log('Found data type row:', rowIndex);
+        }
+        
         // Find where data rows start (after all header rows)
-        // Look for rows that don't contain header-like patterns
         const hasHeaderPattern = row.some(cell => 
           cell && (
             cell.toLowerCase().includes('requirement') ||
@@ -137,13 +142,7 @@ const CsvConverter = () => {
         }
       }
       
-      console.log('Detection results:', { declaredNameCol, dataStartRow, nestingLevels });
-      
-      // Fallback: Based on the console logs, declared_name is at row 2, column 1
-      if (declaredNameCol === -1 && rows.length > 2 && rows[2][1] === 'declared_name') {
-        declaredNameCol = 1;
-        console.log('Using fallback detection: declared_name at column 1');
-      }
+      console.log('Detection results:', { declaredNameCol, dataStartRow, dataTypeRow, requirementClassRow });
       
       if (declaredNameCol === -1) {
         console.error('Available header data:', rows.slice(0, 8));
@@ -188,43 +187,44 @@ const CsvConverter = () => {
           // Skip empty values
           if (!value || value.trim() === '') continue;
 
-          // Build the nesting path from all header rows dynamically
+          // Build the nesting path from header rows (excluding requirement class and data type rows)
           const nestingPath: string[] = [];
           let propertyName = '';
+          let dataType = 'string'; // default
           
-          // Extract path from each header row
+          // Get data type for this column if available
+          if (dataTypeRow !== -1 && dataTypeRow < headerRows.length) {
+            const typeValue = headerRows[dataTypeRow][colIndex];
+            if (typeValue && typeValue.trim()) {
+              dataType = typeValue.trim().toLowerCase();
+              dataTypes.add(dataType);
+            }
+          }
+          
+          // Build nesting path from structure header rows
           for (let headerRowIndex = 0; headerRowIndex < headerRows.length; headerRowIndex++) {
+            // Skip requirement class and data type rows
+            if (headerRowIndex === requirementClassRow || headerRowIndex === dataTypeRow) {
+              continue;
+            }
+            
             const headerValue = headerRows[headerRowIndex][colIndex];
             if (!headerValue || headerValue.trim() === '') continue;
             
             const trimmedValue = headerValue.trim();
             
-            // Skip metadata rows like "requirement class"
-            if (trimmedValue.toLowerCase().includes('requirement') || 
-                trimmedValue.toLowerCase().includes('class')) continue;
-            
-            // Check if this is a nested_object_n pattern
-            const nestedMatch = trimmedValue.match(/nested_object_(\d+)/i);
-            if (nestedMatch) {
-              continue; // Skip nested_object_n labels, we'll handle by position
+            // Skip nested_object_n labels - they don't define structure, just indicate nesting level
+            if (trimmedValue.match(/nested_object_\d+/i)) {
+              continue;
             }
             
-            // Check if this looks like a property name (last meaningful row)
-            if (headerRowIndex === headerRows.length - 1 || 
-                !headerRows.slice(headerRowIndex + 1).some(row => 
-                  row[colIndex] && row[colIndex].trim() && 
-                  !row[colIndex].toLowerCase().includes('requirement') &&
-                  !row[colIndex].toLowerCase().includes('class')
-                )) {
-              propertyName = trimmedValue;
-            } else {
-              // This is part of the nesting path
-              nestingPath.push(trimmedValue);
-            }
+            // Add non-empty values to the nesting path
+            nestingPath.push(trimmedValue);
           }
 
-          // Skip if no property name found
-          if (!propertyName) continue;
+          // The last value in the nesting path is the property name
+          if (nestingPath.length === 0) continue;
+          propertyName = nestingPath.pop()!;
 
           // Track nested fields for reporting
           if (nestingPath.length > 0) {
@@ -234,11 +234,7 @@ const CsvConverter = () => {
             }
           }
 
-          // Assume string data type for now
-          const dataType = 'string';
-          dataTypes.add(dataType);
-
-          // Convert the value
+          // Convert the value using the detected data type
           const convertedValue = convertValue(value, dataType, '');
 
           // Navigate through the nesting path within the declared_name object
