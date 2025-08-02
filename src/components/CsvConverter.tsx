@@ -136,7 +136,10 @@ const CsvConverter = () => {
           )
         );
         
-        if (!hasHeaderPattern && dataStartRow === -1 && rowIndex > 0) {
+        console.log(`Row ${rowIndex} hasHeaderPattern: ${hasHeaderPattern}`);
+        
+        // Only set dataStartRow if we've processed at least a few header rows
+        if (!hasHeaderPattern && dataStartRow === -1 && rowIndex > 2) {
           dataStartRow = rowIndex;
           console.log('Data rows start at row:', rowIndex);
           break;
