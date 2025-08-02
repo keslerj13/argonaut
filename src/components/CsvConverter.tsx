@@ -107,7 +107,7 @@ const CsvConverter = () => {
         
         for (let colIndex = 0; colIndex < row.length; colIndex++) {
           const cell = row[colIndex];
-          if (cell && cell.toLowerCase().trim() === 'declared_name') {
+          if (cell && cell.trim() === 'declared_name') {
             declaredNameCol = colIndex;
             console.log(`Found declared_name at row ${rowIndex}, col ${colIndex}`);
           }
