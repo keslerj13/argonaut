@@ -87,57 +87,118 @@ const CsvConverter = () => {
 
       const rows = parsed.data as string[][];
       
-      if (rows.length < 5) {
-        setError('CSV must have at least 5 rows (field name+type, data type, unit, field name, values)');
+      if (rows.length < 2) {
+        setError('CSV must have at least 2 rows (header row + at least 1 data row)');
         return;
       }
 
-      // Extract the rows
-      const fieldNameAndTypeRow = rows[0]; // Row 1: field name and data type
-      const dataTypeRow = rows[1]; // Row 2: just data type
-      const unitRow = rows[2]; // Row 3: units
-      const fieldNameRow = rows[3]; // Row 4: field names (with nesting)
-      const valueRow = rows[4]; // Row 5: actual values
+      // Get headers from first row
+      const headers = rows[0];
+      
+      // Validate required columns
+      const requiredColumns = ['Object', 'Data Type'];
+      const missingColumns = requiredColumns.filter(col => !headers.includes(col));
+      if (missingColumns.length > 0) {
+        setError(`Missing required columns: ${missingColumns.join(', ')}`);
+        return;
+      }
+      
+      // Find column indices
+      const getColumnIndex = (columnName: string) => headers.findIndex(h => h === columnName);
+      
+      const objectIndex = getColumnIndex('Object');
+      const dataTypeIndex = getColumnIndex('Data Type');
+      
+      // Find all nested object columns (nested_object_1, nested_object_2, etc.)
+      const nestedObjectColumns: { index: number; level: number }[] = [];
+      headers.forEach((header, index) => {
+        const match = header.match(/^nested_object_(\d+)$/);
+        if (match) {
+          nestedObjectColumns.push({ index, level: parseInt(match[1]) });
+        }
+      });
+      
+      // Sort by level
+      nestedObjectColumns.sort((a, b) => a.level - b.level);
+      
+      // All remaining rows are data rows
+      const dataRows = rows.slice(1);
 
       // Create the JSON object
       const jsonObject: any = {};
       const nestedFields: string[] = [];
       const dataTypes = new Set<string>();
 
-      for (let i = 0; i < fieldNameRow.length; i++) {
-        const fieldName = fieldNameRow[i];
-        const value = valueRow[i];
-        const dataType = dataTypeRow[i];
-        const unit = unitRow[i];
-
-        // Skip empty field names
-        if (!fieldName || fieldName.trim() === '') continue;
-
+      // Process each data row
+      for (let rowIndex = 0; rowIndex < dataRows.length; rowIndex++) {
+        const row = dataRows[rowIndex];
+        
+        const objectName = row[objectIndex];
+        const dataType = row[dataTypeIndex];
+        
+        // Skip empty rows
+        if (!objectName || objectName.trim() === '') continue;
+        
         if (dataType && dataType.trim()) {
           dataTypes.add(dataType.trim());
         }
 
-        // Handle nested fields (e.g., "dataSheet>filename")
-        if (fieldName.includes('>')) {
-          nestedFields.push(fieldName);
-          const parts = fieldName.split('>');
-          let current = jsonObject;
+        // Build the nesting path
+        const nestingPath = [objectName.trim()];
+        
+        // Add nested object levels
+        for (const { index } of nestedObjectColumns) {
+          const nestedValue = row[index];
+          if (nestedValue && nestedValue.trim() !== '') {
+            nestingPath.push(nestedValue.trim());
+          }
+        }
+        
+        // Track nested fields for reporting
+        if (nestingPath.length > 1) {
+          const nestedFieldPath = nestingPath.join(' > ');
+          if (!nestedFields.includes(nestedFieldPath)) {
+            nestedFields.push(nestedFieldPath);
+          }
+        }
+
+        // Process all other columns as potential values
+        for (let i = 0; i < headers.length; i++) {
+          const header = headers[i];
+          const value = row[i];
           
-          // Navigate/create nested structure
-          for (let j = 0; j < parts.length - 1; j++) {
-            const part = parts[j].trim();
-            if (!current[part]) {
-              current[part] = {};
-            }
-            current = current[part];
+          // Skip system columns and empty values
+          if (header === 'Object' || header === 'Data Type' || 
+              header.startsWith('nested_object_') || 
+              !value || value.trim() === '') {
+            continue;
           }
           
-          // Set the final value
-          const finalKey = parts[parts.length - 1].trim();
-          current[finalKey] = convertValue(value, dataType, unit);
-        } else {
-          // Simple field
-          jsonObject[fieldName.trim()] = convertValue(value, dataType, unit);
+          // Convert the value
+          const convertedValue = convertValue(value, dataType, '');
+          
+          // Build the nested structure
+          let current = jsonObject;
+          
+          // Navigate through the nesting path
+          for (let j = 0; j < nestingPath.length; j++) {
+            const pathPart = nestingPath[j];
+            
+            if (j === nestingPath.length - 1) {
+              // Last level - check if we need to merge with existing object
+              if (!current[pathPart]) {
+                current[pathPart] = {};
+              }
+              // Set the property
+              current[pathPart][header] = convertedValue;
+            } else {
+              // Intermediate level
+              if (!current[pathPart]) {
+                current[pathPart] = {};
+              }
+              current = current[pathPart];
+            }
+          }
         }
       }
 
@@ -146,7 +207,7 @@ const CsvConverter = () => {
       
       setResult({
         jsonOutput: jsonString,
-        fieldCount: fieldNameRow.filter(f => f && f.trim()).length,
+        fieldCount: headers.length,
         nestedFields,
         dataTypes: Array.from(dataTypes)
       });
@@ -253,7 +314,7 @@ const CsvConverter = () => {
             <div className="space-y-2">
               <p className="text-sm font-medium">Drop your CSV file here or click to browse</p>
               <p className="text-xs text-gray-500">
-                Must follow the 5-row format: field+type, data type, unit, field name, values
+                Must have Object, Data Type, and optional nested_object_N columns
               </p>
             </div>
           )}
@@ -360,7 +421,7 @@ const CsvConverter = () => {
               <div className="space-y-2">
                 <div className="flex items-start gap-2">
                   <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
-                  <span>Nested fields with {">"} converted to nested objects</span>
+                  <span>Dynamic nesting with Object and nested_object_N columns</span>
                 </div>
                 <div className="flex items-start gap-2">
                   <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />

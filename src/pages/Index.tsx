@@ -383,80 +383,118 @@ const Index = () => {
 
       const rows = parsed.data as string[][];
       
-      if (rows.length < 5) {
-        setError('CSV must have at least 5 rows (4 header rows + at least 1 data row)');
+      if (rows.length < 2) {
+        setError('CSV must have at least 2 rows (header row + at least 1 data row)');
         return;
       }
 
-      // Extract the header rows
-      const fieldNameAndTypeRow = rows[0]; // Row 1: field name and data type
-      const dataTypeRow = rows[1]; // Row 2: just data type
-      const unitRow = rows[2]; // Row 3: units
-      const fieldNameRow = rows[3]; // Row 4: field names (with nesting)
+      // Get headers from first row
+      const headers = rows[0];
       
-      // All remaining rows are data rows (from row 5 onwards)
-      const dataRows = rows.slice(4);
+      // Validate required columns
+      const requiredColumns = ['Object', 'Data Type'];
+      const missingColumns = requiredColumns.filter(col => !headers.includes(col));
+      if (missingColumns.length > 0) {
+        setError(`Missing required columns: ${missingColumns.join(', ')}`);
+        return;
+      }
+      
+      // Find column indices
+      const getColumnIndex = (columnName: string) => headers.findIndex(h => h === columnName);
+      
+      const objectIndex = getColumnIndex('Object');
+      const dataTypeIndex = getColumnIndex('Data Type');
+      
+      // Find all nested object columns (nested_object_1, nested_object_2, etc.)
+      const nestedObjectColumns: { index: number; level: number }[] = [];
+      headers.forEach((header, index) => {
+        const match = header.match(/^nested_object_(\d+)$/);
+        if (match) {
+          nestedObjectColumns.push({ index, level: parseInt(match[1]) });
+        }
+      });
+      
+      // Sort by level
+      nestedObjectColumns.sort((a, b) => a.level - b.level);
+      
+      // All remaining rows are data rows
+      const dataRows = rows.slice(1);
 
-      // Create an object to hold all JSON objects with declaredName as keys
+      // Create the final JSON object
       const jsonObject: any = {};
       const nestedFields: string[] = [];
       const dataTypes = new Set<string>();
 
       // Process each data row
       for (let rowIndex = 0; rowIndex < dataRows.length; rowIndex++) {
-        const valueRow = dataRows[rowIndex];
-        const rowObject: any = {};
-        let declaredNameValue = '';
+        const row = dataRows[rowIndex];
+        
+        const objectName = row[objectIndex];
+        const dataType = row[dataTypeIndex];
+        
+        // Skip empty rows
+        if (!objectName || objectName.trim() === '') continue;
+        
+        if (dataType && dataType.trim()) {
+          dataTypes.add(dataType.trim());
+        }
 
-        for (let i = 0; i < fieldNameRow.length; i++) {
-          const fieldName = fieldNameRow[i];
-          const value = valueRow[i];
-          const dataType = dataTypeRow[i];
-          const unit = unitRow[i];
-
-          // Skip empty field names
-          if (!fieldName || fieldName.trim() === '') continue;
-
-          if (dataType && dataType.trim()) {
-            dataTypes.add(dataType.trim());
-          }
-
-          // Handle nested fields (e.g., "dataSheet>filename") - only add to nestedFields once
-          if (fieldName.includes('>') && rowIndex === 0) {
-            nestedFields.push(fieldName);
-          }
-
-          // Capture declaredName value but don't add it to the object
-          if (fieldName.trim() === 'declaredName') {
-            declaredNameValue = value || '';
-            continue;
-          }
-
-          if (fieldName.includes('>')) {
-            const parts = fieldName.split('>');
-            let current = rowObject;
-            
-            // Navigate/create nested structure
-            for (let j = 0; j < parts.length - 1; j++) {
-              const part = parts[j].trim();
-              if (!current[part]) {
-                current[part] = {};
-              }
-              current = current[part];
-            }
-            
-            // Set the final value
-            const finalKey = parts[parts.length - 1].trim();
-            current[finalKey] = convertValue(value, dataType, unit);
-          } else {
-            // Simple field
-            rowObject[fieldName.trim()] = convertValue(value, dataType, unit);
+        // Build the nesting path
+        const nestingPath = [objectName.trim()];
+        
+        // Add nested object levels
+        for (const { index } of nestedObjectColumns) {
+          const nestedValue = row[index];
+          if (nestedValue && nestedValue.trim() !== '') {
+            nestingPath.push(nestedValue.trim());
           }
         }
         
-        // Use declaredName as the key for this object
-        if (declaredNameValue) {
-          jsonObject[declaredNameValue] = rowObject;
+        // Track nested fields for reporting
+        if (nestingPath.length > 1) {
+          const nestedFieldPath = nestingPath.join(' > ');
+          if (!nestedFields.includes(nestedFieldPath)) {
+            nestedFields.push(nestedFieldPath);
+          }
+        }
+
+        // Process all other columns as potential values
+        for (let i = 0; i < headers.length; i++) {
+          const header = headers[i];
+          const value = row[i];
+          
+          // Skip system columns and empty values
+          if (header === 'Object' || header === 'Data Type' || 
+              header.startsWith('nested_object_') || 
+              !value || value.trim() === '') {
+            continue;
+          }
+          
+          // Convert the value
+          const convertedValue = convertValue(value, dataType, '');
+          
+          // Build the nested structure
+          let current = jsonObject;
+          
+          // Navigate through the nesting path
+          for (let j = 0; j < nestingPath.length; j++) {
+            const pathPart = nestingPath[j];
+            
+            if (j === nestingPath.length - 1) {
+              // Last level - check if we need to merge with existing object
+              if (!current[pathPart]) {
+                current[pathPart] = {};
+              }
+              // Set the property
+              current[pathPart][header] = convertedValue;
+            } else {
+              // Intermediate level
+              if (!current[pathPart]) {
+                current[pathPart] = {};
+              }
+              current = current[pathPart];
+            }
+          }
         }
       }
 
@@ -465,7 +503,7 @@ const Index = () => {
       
       setResult({
         jsonOutput: jsonString,
-        fieldCount: fieldNameRow.filter(f => f && f.trim()).length,
+        fieldCount: headers.length,
         nestedFields,
         dataTypes: Array.from(dataTypes)
       });
@@ -816,38 +854,37 @@ const Index = () => {
           
           <div style={{ marginBottom: '16px' }}>
             <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>
-              Your CSV file must follow this exact 4-row header structure:
+              Your CSV file must have these required columns:
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '8px', fontSize: '14px' }}>
-              <span style={{ fontWeight: '500' }}>Row 1:</span>
-              <span>Field name + data type (e.g., "temperature real")</span>
-              <span style={{ fontWeight: '500' }}>Row 2:</span>
-              <span>Data type only (e.g., "real", "int", "string")</span>
-              <span style={{ fontWeight: '500' }}>Row 3:</span>
-              <span>Units (e.g., "°C", "mm", leave empty if no unit)</span>
-              <span style={{ fontWeight: '500' }}>Row 4:</span>
-              <span>Field names (use {'">"'} for nesting, e.g., "dataSheet{'>'}filename")</span>
-              <span style={{ fontWeight: '500' }}>Row 5+:</span>
-              <span>Your data rows</span>
+              <span style={{ fontWeight: '500' }}>Object:</span>
+              <span>The main object name (e.g., "Attribute")</span>
+              <span style={{ fontWeight: '500' }}>Data Type:</span>
+              <span>Data type (e.g., "real", "int", "string")</span>
+              <span style={{ fontWeight: '500' }}>nested_object_1:</span>
+              <span>First nesting level (e.g., "additional")</span>
+              <span style={{ fontWeight: '500' }}>nested_object_2:</span>
+              <span>Second nesting level (e.g., "operating_temperature_min")</span>
+              <span style={{ fontWeight: '500' }}>value, unit, etc.:</span>
+              <span>Property columns with actual data</span>
             </div>
           </div>
 
           <div style={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '16px' }}>
             <h3 style={{ fontSize: '16px', fontWeight: '500', marginBottom: '12px' }}>Example CSV Template:</h3>
             <pre style={{ fontSize: '12px', fontFamily: 'monospace', color: '#374151', whiteSpace: 'pre-wrap', margin: 0, overflow: 'auto' }}>
-{`declaredName string,temperature real,pressure int,dataSheet>filename string,dataSheet>size real
-string,real,int,string,real
-,°C,bar,,MB
-declaredName,temperature,pressure,dataSheet>filename,dataSheet>size
-Heat Exchanger A,85.5,12,manual.pdf,2.5
-Heat Exchanger B,92.0,15,specs.pdf,1.8`}
+{`Object,Data Type,nested_object_1,nested_object_2,value,unit
+Attribute,real,additional,operating_temperature_min,5,
+Attribute,string,additional,operating_temperature_min,,degrees celsius
+Attribute,real,electrical,voltage_max,24,V
+Attribute,int,electrical,current_max,2,A`}
             </pre>
           </div>
 
           <div style={{ marginTop: '16px', padding: '12px', backgroundColor: '#fffbeb', border: '1px solid #fbbf24', borderRadius: '6px' }}>
             <p style={{ fontSize: '13px', color: '#92400e' }}>
-              💡 <strong>Tip:</strong> The "declaredName" field will be used as the key for each JSON object. 
-              Use {'">"'} in field names to create nested objects (e.g., "dataSheet{'>'}filename" creates {`{dataSheet: {filename: "..."}}`}).
+              💡 <strong>Tip:</strong> Use multiple rows with the same nesting path to add multiple properties. 
+              For example, both "value" and "unit" can be added to the same nested object by using separate rows.
             </p>
           </div>
         </div>
