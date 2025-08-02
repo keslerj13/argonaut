@@ -87,43 +87,20 @@ const CsvConverter = () => {
 
       const rows = parsed.data as string[][];
       
-      if (rows.length < 2) {
-        setError('CSV must have at least 2 rows (header row + at least 1 data row)');
+      if (rows.length < 6) {
+        setError('CSV must have at least 6 rows (5 header rows + at least 1 data row)');
         return;
       }
 
-      // Get headers from first row
-      const headers = rows[0];
+      // Extract the header rows
+      const declaredNameRow = rows[0]; // Row 1: declared_name for each data row
+      const objectRow = rows[1]; // Row 2: Object level for each column
+      const nestedObject1Row = rows[2]; // Row 3: nested_object_1 level for each column
+      const nestedObject2Row = rows[3]; // Row 4: nested_object_2 level for each column  
+      const propertyRow = rows[4]; // Row 5: property names (value, unit, etc.) for each column
       
-      // Validate required columns
-      const requiredColumns = ['declared_name', 'Object', 'Data Type'];
-      const missingColumns = requiredColumns.filter(col => !headers.includes(col));
-      if (missingColumns.length > 0) {
-        setError(`Missing required columns: ${missingColumns.join(', ')}`);
-        return;
-      }
-      
-      // Find column indices
-      const getColumnIndex = (columnName: string) => headers.findIndex(h => h === columnName);
-      
-      const declaredNameIndex = getColumnIndex('declared_name');
-      const objectIndex = getColumnIndex('Object');
-      const dataTypeIndex = getColumnIndex('Data Type');
-      
-      // Find all nested object columns (nested_object_1, nested_object_2, etc.)
-      const nestedObjectColumns: { index: number; level: number }[] = [];
-      headers.forEach((header, index) => {
-        const match = header.match(/^nested_object_(\d+)$/);
-        if (match) {
-          nestedObjectColumns.push({ index, level: parseInt(match[1]) });
-        }
-      });
-      
-      // Sort by level
-      nestedObjectColumns.sort((a, b) => a.level - b.level);
-      
-      // All remaining rows are data rows
-      const dataRows = rows.slice(1);
+      // All remaining rows are data rows (from row 6 onwards)
+      const dataRows = rows.slice(5);
 
       // Create the JSON object
       const jsonObject: any = {};
@@ -132,73 +109,69 @@ const CsvConverter = () => {
 
       // Process each data row
       for (let rowIndex = 0; rowIndex < dataRows.length; rowIndex++) {
-        const row = dataRows[rowIndex];
+        const dataRow = dataRows[rowIndex];
         
-        const declaredNameValue = row[declaredNameIndex];
-        const objectName = row[objectIndex];
-        const dataType = row[dataTypeIndex];
-        
-        // Skip empty rows
-        if (!declaredNameValue || declaredNameValue.trim() === '' || 
-            !objectName || objectName.trim() === '') continue;
-        
-        if (dataType && dataType.trim()) {
-          dataTypes.add(dataType.trim());
+        // Get the declared_name for this data row (first column of data row)
+        const declaredNameValue = dataRow[0];
+        if (!declaredNameValue || declaredNameValue.trim() === '') continue;
+
+        // Ensure the declared_name object exists
+        if (!jsonObject[declaredNameValue]) {
+          jsonObject[declaredNameValue] = {};
         }
 
-        // Build the nesting path
-        const nestingPath = [objectName.trim()];
-        
-        // Add nested object levels
-        for (const { index } of nestedObjectColumns) {
-          const nestedValue = row[index];
-          if (nestedValue && nestedValue.trim() !== '') {
-            nestingPath.push(nestedValue.trim());
-          }
-        }
-        
-        // Track nested fields for reporting
-        if (nestingPath.length > 1) {
-          const nestedFieldPath = nestingPath.join(' > ');
-          if (!nestedFields.includes(nestedFieldPath)) {
-            nestedFields.push(nestedFieldPath);
-          }
-        }
+        // Process each column (each column represents a nested path, skip first column as it's declared_name)
+        for (let colIndex = 1; colIndex < dataRow.length; colIndex++) {
+          const value = dataRow[colIndex];
+          
+          // Skip empty values
+          if (!value || value.trim() === '') continue;
 
-        // Process all other columns as potential values
-        for (let i = 0; i < headers.length; i++) {
-          const header = headers[i];
-          const value = row[i];
-          
-          // Skip system columns and empty values
-          if (header === 'declared_name' || header === 'Object' || header === 'Data Type' || 
-              header.startsWith('nested_object_') || 
-              !value || value.trim() === '') {
-            continue;
+          // Build the nesting path from the header rows
+          const objectName = objectRow[colIndex];
+          const nestedObject1 = nestedObject1Row[colIndex];
+          const nestedObject2 = nestedObject2Row[colIndex];
+          const propertyName = propertyRow[colIndex];
+
+          // Skip if essential parts are missing
+          if (!objectName || !propertyName) continue;
+
+          // Build the complete nesting path
+          const nestingPath = [objectName.trim()];
+          if (nestedObject1 && nestedObject1.trim() !== '') {
+            nestingPath.push(nestedObject1.trim());
           }
-          
+          if (nestedObject2 && nestedObject2.trim() !== '') {
+            nestingPath.push(nestedObject2.trim());
+          }
+
+          // Track nested fields for reporting
+          if (nestingPath.length > 1) {
+            const nestedFieldPath = nestingPath.join(' > ');
+            if (!nestedFields.includes(nestedFieldPath)) {
+              nestedFields.push(nestedFieldPath);
+            }
+          }
+
+          // Assume string data type for now (you can add a data type row if needed)
+          const dataType = 'string';
+          dataTypes.add(dataType);
+
           // Convert the value
           const convertedValue = convertValue(value, dataType, '');
-          
-          // Ensure the declared_name object exists
-          if (!jsonObject[declaredNameValue]) {
-            jsonObject[declaredNameValue] = {};
-          }
-          
-          // Build the nested structure within the declared_name object
+
+          // Navigate through the nesting path within the declared_name object
           let current = jsonObject[declaredNameValue];
           
-          // Navigate through the nesting path (Object + nested_object_N)
           for (let j = 0; j < nestingPath.length; j++) {
             const pathPart = nestingPath[j];
             
             if (j === nestingPath.length - 1) {
-              // Last level - check if we need to merge with existing object
+              // Last level - set the property
               if (!current[pathPart]) {
                 current[pathPart] = {};
               }
-              // Set the property
-              current[pathPart][header] = convertedValue;
+              current[pathPart][propertyName.trim()] = convertedValue;
             } else {
               // Intermediate level
               if (!current[pathPart]) {
@@ -215,7 +188,7 @@ const CsvConverter = () => {
       
       setResult({
         jsonOutput: jsonString,
-        fieldCount: headers.length,
+        fieldCount: objectRow.filter(f => f && f.trim()).length,
         nestedFields,
         dataTypes: Array.from(dataTypes)
       });
@@ -322,7 +295,7 @@ const CsvConverter = () => {
             <div className="space-y-2">
               <p className="text-sm font-medium">Drop your CSV file here or click to browse</p>
               <p className="text-xs text-gray-500">
-                Must have declared_name, Object, Data Type, and optional nested_object_N columns
+                Must have 5 header rows: declared_name, Object, nested_object_1, nested_object_2, property
               </p>
             </div>
           )}
