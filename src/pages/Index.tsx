@@ -398,9 +398,10 @@ const Index = () => {
       // Find declared_name column and detect nesting levels
       for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
         const row = rows[rowIndex];
+        console.log(`Row ${rowIndex}:`, row.slice(0, 10)); // Log first 10 columns
         for (let colIndex = 0; colIndex < row.length; colIndex++) {
           const cell = row[colIndex];
-          if (cell && cell.toLowerCase().trim().includes('declared_name')) {
+          if (cell && cell.toLowerCase().trim() === 'declared_name') {
             declaredNameCol = colIndex;
             console.log(`Found declared_name at row ${rowIndex}, col ${colIndex}:`, cell);
           }
