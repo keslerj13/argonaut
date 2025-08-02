@@ -139,6 +139,12 @@ const CsvConverter = () => {
       
       console.log('Detection results:', { declaredNameCol, dataStartRow, nestingLevels });
       
+      // Fallback: Based on the console logs, declared_name is at row 2, column 1
+      if (declaredNameCol === -1 && rows.length > 2 && rows[2][1] === 'declared_name') {
+        declaredNameCol = 1;
+        console.log('Using fallback detection: declared_name at column 1');
+      }
+      
       if (declaredNameCol === -1) {
         console.error('Available header data:', rows.slice(0, 8));
         setError('Could not find declared_name column in CSV headers. Please ensure one of the header cells contains "declared_name".');
