@@ -164,8 +164,8 @@ const CsvConverter = () => {
       const headerRows = rows.slice(0, dataStartRow);
       const dataRows = rows.slice(dataStartRow);
 
-      // Create the JSON object
-      const jsonObject: any = {};
+      // Create the JSON array
+      const jsonArray: any[] = [];
       const nestedFields: string[] = [];
       const dataTypes = new Set<string>();
 
@@ -177,10 +177,10 @@ const CsvConverter = () => {
         const declaredNameValue = dataRow[declaredNameCol];
         if (!declaredNameValue || declaredNameValue.trim() === '') continue;
 
-        // Ensure the declared_name object exists
-        if (!jsonObject[declaredNameValue]) {
-          jsonObject[declaredNameValue] = {};
-        }
+        // Create a new record for this row
+        const record: any = {
+          declared_name: declaredNameValue
+        };
 
         // Process each column (skip declared_name column)
         for (let colIndex = 0; colIndex < dataRow.length; colIndex++) {
@@ -241,8 +241,8 @@ const CsvConverter = () => {
           // Convert the value using the detected data type
           const convertedValue = convertValue(value, dataType, '');
 
-          // Navigate through the nesting path within the declared_name object
-          let current = jsonObject[declaredNameValue];
+          // Navigate through the nesting path within the record
+          let current = record;
           
           // Handle direct properties (no nesting)
           if (nestingPath.length === 0) {
@@ -268,10 +268,12 @@ const CsvConverter = () => {
             }
           }
         }
+        
+        jsonArray.push(record);
       }
 
       // Convert to formatted JSON string
-      const jsonString = JSON.stringify(jsonObject, null, 2);
+      const jsonString = JSON.stringify(jsonArray, null, 2);
       
       setResult({
         jsonOutput: jsonString,
