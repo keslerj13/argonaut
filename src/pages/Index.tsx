@@ -550,13 +550,13 @@ const Index = () => {
               
               if (j === nestingPath.length - 1) {
                 // Last level - set the property
-                if (!current[pathPart]) {
+                if (!current[pathPart] || typeof current[pathPart] !== 'object' || Array.isArray(current[pathPart])) {
                   current[pathPart] = {};
                 }
                 current[pathPart][propertyName] = convertedValue;
               } else {
-                // Intermediate level
-                if (!current[pathPart]) {
+                // Intermediate level - ensure we have an object to work with
+                if (!current[pathPart] || typeof current[pathPart] !== 'object' || Array.isArray(current[pathPart])) {
                   current[pathPart] = {};
                 }
                 current = current[pathPart];
