@@ -2,11 +2,20 @@ import React, { useState, useRef } from 'react';
 import Papa from 'papaparse';
 import { Upload, Download, FileText, CheckCircle, AlertCircle, Copy } from 'lucide-react';
 
+interface ValidationWarning {
+  type: string;
+  message: string;
+  row?: number;
+  column?: number;
+  details?: string[];
+}
+
 interface ConversionResult {
   jsonOutput: string;
   fieldCount: number;
   nestedFields: string[];
   dataTypes: string[];
+  warnings: ValidationWarning[];
 }
 
 const CsvConverter = () => {
@@ -164,6 +173,186 @@ const CsvConverter = () => {
       const headerRows = rows.slice(0, dataStartRow);
       const dataRows = rows.slice(dataStartRow);
 
+      // Validation warnings
+      const warnings: ValidationWarning[] = [];
+      
+      // Quality checks before processing
+      
+      // Check 1: Missing data types
+      if (dataTypeRow !== -1) {
+        for (let colIndex = 0; colIndex < headerRows[0].length; colIndex++) {
+          if (colIndex === declaredNameCol) continue;
+          const dataTypeValue = headerRows[dataTypeRow][colIndex];
+          const hasData = dataRows.some(row => row[colIndex] && row[colIndex].trim() !== '');
+          if (hasData && (!dataTypeValue || dataTypeValue.trim() === '')) {
+            warnings.push({
+              type: 'missing_data_type',
+              message: 'Column missing data type',
+              column: colIndex + 1
+            });
+          }
+        }
+      }
+      
+      // Check 2: Non-unique declared_name values
+      const declaredNames = dataRows
+        .map(row => row[declaredNameCol])
+        .filter(name => name && name.trim() !== '');
+      const duplicates = declaredNames.filter((name, index) => 
+        declaredNames.indexOf(name) !== index
+      );
+      if (duplicates.length > 0) {
+        warnings.push({
+          type: 'duplicate_declared_names',
+          message: 'Duplicate declared_name values found',
+          details: [...new Set(duplicates)]
+        });
+      }
+      
+      // Check 3: declared_name with spaces or invalid characters
+      declaredNames.forEach((name, index) => {
+        if (/[^\w\-]/.test(name)) {
+          warnings.push({
+            type: 'invalid_declared_name',
+            message: `Invalid declared_name "${name}" contains spaces or unicode characters`,
+            row: dataStartRow + index + 1
+          });
+        }
+      });
+      
+      // Check 4: Data with embedded units (like "15 mm")
+      for (let rowIndex = 0; rowIndex < dataRows.length; rowIndex++) {
+        const dataRow = dataRows[rowIndex];
+        for (let colIndex = 0; colIndex < dataRow.length; colIndex++) {
+          if (colIndex === declaredNameCol) continue;
+          const value = dataRow[colIndex];
+          if (value && /^\d+\.?\d*\s+(mm|m|cm|km|kg|g|kW|MW|kWh|°C|°F|Hz|kHz|MHz)/.test(value.trim())) {
+            warnings.push({
+              type: 'embedded_unit',
+              message: `Value "${value}" contains embedded unit`,
+              row: dataStartRow + rowIndex + 1,
+              column: colIndex + 1
+            });
+          }
+        }
+      }
+      
+      // Check 5: Missing top-level object or skipped nesting levels
+      for (let colIndex = 0; colIndex < headerRows[0].length; colIndex++) {
+        if (colIndex === declaredNameCol) continue;
+        
+        const nestingPath: string[] = [];
+        for (let headerRowIndex = 0; headerRowIndex < headerRows.length; headerRowIndex++) {
+          if (headerRowIndex === requirementClassRow || headerRowIndex === dataTypeRow) continue;
+          const headerValue = headerRows[headerRowIndex][colIndex];
+          if (headerValue && headerValue.trim() && !headerValue.match(/nested_object_\d+/i)) {
+            nestingPath.push(headerValue.trim());
+          }
+        }
+        
+        // Check if column has nested objects but no top-level object
+        const hasNestedObjectLabel = headerRows.some((row, idx) => 
+          idx !== requirementClassRow && 
+          idx !== dataTypeRow && 
+          row[colIndex] && 
+          row[colIndex].match(/nested_object_\d+/i)
+        );
+        
+        if (hasNestedObjectLabel && nestingPath.length === 1) {
+          warnings.push({
+            type: 'missing_top_level',
+            message: 'Column has nested object label but no top-level object key',
+            column: colIndex + 1
+          });
+        }
+      }
+      
+      // Check 6: Inconsistent units in columns labeled with "unit"
+      for (let colIndex = 0; colIndex < headerRows[0].length; colIndex++) {
+        if (colIndex === declaredNameCol) continue;
+        
+        // Check if this column has "unit" in its header
+        const hasUnitLabel = headerRows.some(row => 
+          row[colIndex] && row[colIndex].toLowerCase().includes('unit')
+        );
+        
+        if (hasUnitLabel) {
+          const units = dataRows
+            .map(row => row[colIndex])
+            .filter(val => val && val.trim() !== '')
+            .map(val => val.trim());
+          
+          const uniqueUnits = [...new Set(units)];
+          if (uniqueUnits.length > 1) {
+            warnings.push({
+              type: 'inconsistent_units',
+              message: 'Column has inconsistent units',
+              column: colIndex + 1,
+              details: uniqueUnits
+            });
+          }
+        }
+      }
+      
+      // Check 7: Value/unit mismatch - find columns with shared nested object
+      const valueUnitPairs = new Map<string, { valueCol: number; unitCol: number }>();
+      
+      for (let colIndex = 0; colIndex < headerRows[0].length; colIndex++) {
+        if (colIndex === declaredNameCol) continue;
+        
+        // Build the path for this column
+        const path: string[] = [];
+        let isValue = false;
+        let isUnit = false;
+        
+        for (let headerRowIndex = 0; headerRowIndex < headerRows.length; headerRowIndex++) {
+          if (headerRowIndex === requirementClassRow || headerRowIndex === dataTypeRow) continue;
+          const headerValue = headerRows[headerRowIndex][colIndex];
+          if (headerValue && headerValue.trim()) {
+            const trimmed = headerValue.trim();
+            if (!trimmed.match(/nested_object_\d+/i)) {
+              if (trimmed.toLowerCase() === 'value') {
+                isValue = true;
+              } else if (trimmed.toLowerCase() === 'unit') {
+                isUnit = true;
+              } else {
+                path.push(trimmed);
+              }
+            }
+          }
+        }
+        
+        const pathKey = path.join('|');
+        if (pathKey && (isValue || isUnit)) {
+          const existing = valueUnitPairs.get(pathKey) || { valueCol: -1, unitCol: -1 };
+          if (isValue) existing.valueCol = colIndex;
+          if (isUnit) existing.unitCol = colIndex;
+          valueUnitPairs.set(pathKey, existing);
+        }
+      }
+      
+      // Check for value/unit mismatches
+      valueUnitPairs.forEach((pair, pathKey) => {
+        if (pair.valueCol !== -1 && pair.unitCol !== -1) {
+          for (let rowIndex = 0; rowIndex < dataRows.length; rowIndex++) {
+            const valueCell = dataRows[rowIndex][pair.valueCol];
+            const unitCell = dataRows[rowIndex][pair.unitCol];
+            
+            const hasValue = valueCell && valueCell.trim() !== '';
+            const hasUnit = unitCell && unitCell.trim() !== '';
+            
+            if (hasValue !== hasUnit) {
+              warnings.push({
+                type: 'value_unit_mismatch',
+                message: `Value/unit mismatch for "${pathKey.replace(/\|/g, ' > ')}"`,
+                row: dataStartRow + rowIndex + 1,
+                details: [`Value: ${hasValue ? 'filled' : 'empty'}, Unit: ${hasUnit ? 'filled' : 'empty'}`]
+              });
+            }
+          }
+        }
+      });
+
       // Create the JSON array
       const jsonArray: any[] = [];
       const nestedFields: string[] = [];
@@ -277,9 +466,10 @@ const CsvConverter = () => {
       
       setResult({
         jsonOutput: jsonString,
-        fieldCount: headerRows[0] ? headerRows[0].filter(f => f && f.trim()).length - 1 : 0, // Subtract 1 for declared_name column
+        fieldCount: headerRows[0] ? headerRows[0].filter(f => f && f.trim()).length - 1 : 0,
         nestedFields,
-        dataTypes: Array.from(dataTypes)
+        dataTypes: Array.from(dataTypes),
+        warnings
       });
 
     } catch (err) {
@@ -423,6 +613,41 @@ const CsvConverter = () => {
       {/* Results */}
       {result && (
         <div className="space-y-6">
+          {/* Warnings */}
+          {result.warnings.length > 0 && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+              <div className="flex items-start gap-2 mb-3">
+                <AlertCircle className="h-5 w-5 text-yellow-600 mt-0.5" />
+                <div className="flex-1">
+                  <h3 className="font-semibold text-yellow-900 mb-2">
+                    Quality Warnings ({result.warnings.length})
+                  </h3>
+                  <p className="text-sm text-yellow-800 mb-3">
+                    The following issues were detected. The conversion completed, but you may want to review these:
+                  </p>
+                  <div className="space-y-2">
+                    {result.warnings.map((warning, idx) => (
+                      <div key={idx} className="bg-white rounded p-3 text-sm">
+                        <div className="font-medium text-yellow-900">{warning.message}</div>
+                        {warning.row && (
+                          <div className="text-yellow-700 mt-1">Row: {warning.row}</div>
+                        )}
+                        {warning.column && (
+                          <div className="text-yellow-700 mt-1">Column: {warning.column}</div>
+                        )}
+                        {warning.details && warning.details.length > 0 && (
+                          <div className="text-yellow-700 mt-1">
+                            Values: {warning.details.join(', ')}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+          
           {/* Summary Stats */}
           <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
             <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
