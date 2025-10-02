@@ -297,14 +297,14 @@ const CsvConverter = () => {
       // Check 7: Filled cells in first column under nested_objects list
       for (let headerRowIndex = 0; headerRowIndex < headerRows.length; headerRowIndex++) {
         const firstColValue = headerRows[headerRowIndex][0];
-        // Skip rows that are supposed to have values (declared_name, requirement class, data type rows)
-        const isExpectedRow = firstColValue && (
-          firstColValue.toLowerCase().includes('declared_name') ||
-          firstColValue.toLowerCase().includes('requirement') ||
-          firstColValue.toLowerCase().includes('data') && firstColValue.toLowerCase().includes('type')
-        );
         
-        if (!isExpectedRow && firstColValue && firstColValue.trim() !== '') {
+        // Only skip specific expected rows
+        const isDeclaredNameRow = firstColValue && firstColValue.toLowerCase().trim() === 'declared_name';
+        const isRequirementRow = headerRowIndex === requirementClassRow;
+        const isDataTypeRow = headerRowIndex === dataTypeRow;
+        
+        // If first column has ANY value in a non-expected row, warn
+        if (!isDeclaredNameRow && !isRequirementRow && !isDataTypeRow && firstColValue && firstColValue.trim() !== '') {
           warnings.push({
             type: 'invalid_first_column',
             message: `First column should be empty in nested object structure rows, found "${firstColValue}"`,
