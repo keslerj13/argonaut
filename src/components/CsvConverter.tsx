@@ -295,16 +295,26 @@ const CsvConverter = () => {
       }
       
       // Check 7: Filled cells in first column under nested_objects list
+      console.log('=== CHECK 7: First Column Validation ===');
+      console.log('Header rows count:', headerRows.length);
+      console.log('requirementClassRow:', requirementClassRow);
+      console.log('dataTypeRow:', dataTypeRow);
+      
       for (let headerRowIndex = 0; headerRowIndex < headerRows.length; headerRowIndex++) {
         const firstColValue = headerRows[headerRowIndex][0];
+        
+        console.log(`Row ${headerRowIndex}: firstColValue = "${firstColValue}"`);
         
         // Only skip specific expected rows
         const isDeclaredNameRow = firstColValue && firstColValue.toLowerCase().trim() === 'declared_name';
         const isRequirementRow = headerRowIndex === requirementClassRow;
         const isDataTypeRow = headerRowIndex === dataTypeRow;
         
+        console.log(`  isDeclaredNameRow: ${isDeclaredNameRow}, isRequirementRow: ${isRequirementRow}, isDataTypeRow: ${isDataTypeRow}`);
+        
         // If first column has ANY value in a non-expected row, warn
         if (!isDeclaredNameRow && !isRequirementRow && !isDataTypeRow && firstColValue && firstColValue.trim() !== '') {
+          console.log(`  ⚠️ WARNING: Found unexpected value in first column!`);
           warnings.push({
             type: 'invalid_first_column',
             message: `First column should be empty in nested object structure rows, found "${firstColValue}"`,
@@ -312,6 +322,8 @@ const CsvConverter = () => {
           });
         }
       }
+      
+      console.log('Total warnings after Check 7:', warnings.length);
       
       // Check 8: Value/unit mismatch - find columns with shared nested object
       const valueUnitPairs = new Map<string, { valueCol: number; unitCol: number }>();
