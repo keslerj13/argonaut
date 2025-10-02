@@ -294,7 +294,26 @@ const CsvConverter = () => {
         }
       }
       
-      // Check 7: Value/unit mismatch - find columns with shared nested object
+      // Check 7: Filled cells in first column under nested_objects list
+      for (let headerRowIndex = 0; headerRowIndex < headerRows.length; headerRowIndex++) {
+        const firstColValue = headerRows[headerRowIndex][0];
+        // Skip rows that are supposed to have values (declared_name, requirement class, data type rows)
+        const isExpectedRow = firstColValue && (
+          firstColValue.toLowerCase().includes('declared_name') ||
+          firstColValue.toLowerCase().includes('requirement') ||
+          firstColValue.toLowerCase().includes('data') && firstColValue.toLowerCase().includes('type')
+        );
+        
+        if (!isExpectedRow && firstColValue && firstColValue.trim() !== '') {
+          warnings.push({
+            type: 'invalid_first_column',
+            message: `First column should be empty in nested object structure rows, found "${firstColValue}"`,
+            row: headerRowIndex + 1
+          });
+        }
+      }
+      
+      // Check 8: Value/unit mismatch - find columns with shared nested object
       const valueUnitPairs = new Map<string, { valueCol: number; unitCol: number }>();
       
       for (let colIndex = 0; colIndex < headerRows[0].length; colIndex++) {
