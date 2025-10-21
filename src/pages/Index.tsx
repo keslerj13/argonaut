@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import Papa from 'papaparse';
-import { Upload, Download, FileText, CheckCircle, AlertCircle, Copy } from 'lucide-react';
+import { Upload, Download, FileText, CheckCircle, AlertCircle, Copy, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface ConversionResult {
   jsonOutput: string;
@@ -14,9 +14,159 @@ const Index = () => {
   const [result, setResult] = useState<ConversionResult | null>(null);
   const [error, setError] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [mode, setMode] = useState<'csv-to-json' | 'json-to-csv'>('csv-to-json');
   const [jsonInput, setJsonInput] = useState<string>('');
+  const [preAnalysis, setPreAnalysis] = useState<{
+    issues: string[];
+    structure: {
+      totalRows: number;
+      declaredNameFound: boolean;
+      declaredNameCol: number;
+      dataTypeRowFound: boolean;
+      dataTypeRow: number;
+      dataStartRow: number;
+      estimatedDataRows: number;
+    };
+  } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
+  const analyzeFile = async (selectedFile: File) => {
+    console.log('🔍 Starting file analysis...');
+    setIsAnalyzing(true);
+    setPreAnalysis(null);
+    setError('');
+    
+    try {
+      const csvData = await selectedFile.text();
+      const parsed = Papa.parse(csvData, {
+        skipEmptyLines: true,
+        dynamicTyping: false,
+        delimitersToGuess: [',', '\t', '|', ';']
+      });
+      
+      const rows = parsed.data as string[][];
+      const issues: string[] = [];
+      
+      console.log(`📊 CSV has ${rows.length} total rows`);
+      
+      // Find declared_name
+      let declaredNameCol = -1;
+      let dataTypeRow = -1;
+      let dataStartRow = -1;
+      
+      for (let rowIndex = 0; rowIndex < Math.min(rows.length, 20); rowIndex++) {
+        const row = rows[rowIndex];
+        for (let colIndex = 0; colIndex < row.length; colIndex++) {
+          if (row[colIndex] && row[colIndex].trim() === 'declared_name') {
+            declaredNameCol = colIndex;
+            console.log(`✓ Found declared_name at column ${colIndex}`);
+            break;
+          }
+        }
+        const firstCell = row[0]?.toLowerCase().trim() || '';
+        if (firstCell === 'data type' || firstCell === 'data_type') {
+          dataTypeRow = rowIndex;
+          console.log(`✓ Found data type row at ${rowIndex}`);
+        }
+      }
+      
+      // Find data start
+      for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+        const row = rows[rowIndex];
+        const hasHeaderPattern = row.some(cell => {
+          if (!cell) return false;
+          const lower = cell.toLowerCase().trim();
+          return (
+            lower === 'declared_name' ||
+            lower === 'requirement class' ||
+            lower === 'data type' ||
+            lower === 'data_type' ||
+            lower.startsWith('nested_object_') ||
+            (lower === 'object' && row[0] === cell)
+          );
+        });
+        
+        if (!hasHeaderPattern && rowIndex > 2) {
+          const hasData = row.some(cell => cell && cell.trim() !== '');
+          if (hasData) {
+            dataStartRow = rowIndex;
+            console.log(`✓ Data starts at row ${rowIndex}`);
+            break;
+          }
+        }
+      }
+      
+      // Auto-detect if not found
+      if (dataStartRow === -1 && declaredNameCol !== -1) {
+        let headerLikeRows = 0;
+        for (let i = 0; i < Math.min(rows.length, 15); i++) {
+          const hasPattern = rows[i].some(cell => {
+            if (!cell) return false;
+            const lower = cell.toLowerCase().trim();
+            return (
+              lower === 'declared_name' ||
+              lower === 'requirement class' ||
+              lower === 'data type' ||
+              lower === 'data_type' ||
+              lower.startsWith('nested_object_') ||
+              lower === 'object'
+            );
+          });
+          if (hasPattern) headerLikeRows = i + 1;
+        }
+        if (headerLikeRows > 0 && headerLikeRows < rows.length) {
+          dataStartRow = headerLikeRows;
+          console.log(`✓ Auto-detected data start at row ${dataStartRow}`);
+        }
+      }
+      
+      // Collect issues
+      if (declaredNameCol === -1) {
+        issues.push('❌ CRITICAL: No "declared_name" column found in first 20 rows');
+        console.error('❌ declared_name not found');
+      }
+      if (dataTypeRow === -1) {
+        issues.push('⚠️ WARNING: No "Data Type" row found');
+        console.warn('⚠️ Data Type row not found');
+      }
+      if (dataStartRow === -1) {
+        issues.push('❌ CRITICAL: Cannot determine where data rows begin');
+        console.error('❌ Cannot find data start');
+      } else if (dataStartRow >= rows.length) {
+        issues.push('❌ CRITICAL: Data section would start beyond end of file');
+        console.error('❌ Data start beyond file end');
+      }
+      
+      const estimatedDataRows = dataStartRow !== -1 ? rows.length - dataStartRow : 0;
+      if (estimatedDataRows === 0) {
+        issues.push('❌ CRITICAL: No data rows detected');
+        console.error('❌ No data rows');
+      }
+      
+      console.log(`📋 Analysis complete: ${issues.length} issues found`);
+      
+      setPreAnalysis({
+        issues,
+        structure: {
+          totalRows: rows.length,
+          declaredNameFound: declaredNameCol !== -1,
+          declaredNameCol,
+          dataTypeRowFound: dataTypeRow !== -1,
+          dataTypeRow,
+          dataStartRow,
+          estimatedDataRows
+        }
+      });
+      
+    } catch (err) {
+      console.error('❌ Analysis failed:', err);
+      setError('Failed to analyze CSV: ' + (err as Error).message);
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
   const renderHighlightedJSON = (json: string) => {
     if (!json) return null;
     
@@ -97,8 +247,6 @@ const Index = () => {
       );
     });
   };
-  
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const convertValue = (value: string, dataType: string, unit: string) => {
     if (!value || value.trim() === '') return null;
@@ -616,28 +764,44 @@ const Index = () => {
     URL.revokeObjectURL(url);
   };
 
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    console.log('📁 File selected event triggered');
     const selectedFile = event.target.files?.[0];
     if (selectedFile) {
+      console.log('📁 File:', selectedFile.name, selectedFile.size, 'bytes');
       if (!selectedFile.name.toLowerCase().endsWith('.csv')) {
         setError('Please select a CSV file');
+        setFile(null);
+        setResult(null);
+        setPreAnalysis(null);
         return;
       }
       setFile(selectedFile);
       setError('');
       setResult(null);
+      
+      // Immediately analyze the file
+      await analyzeFile(selectedFile);
     }
   };
 
-  const handleDrop = (event: React.DragEvent) => {
+  const handleDrop = async (event: React.DragEvent) => {
     event.preventDefault();
+    console.log('📁 File dropped');
     const droppedFile = event.dataTransfer.files[0];
     if (droppedFile && droppedFile.name.toLowerCase().endsWith('.csv')) {
+      console.log('📁 File:', droppedFile.name, droppedFile.size, 'bytes');
       setFile(droppedFile);
       setError('');
       setResult(null);
+      
+      // Immediately analyze the file
+      await analyzeFile(droppedFile);
     } else {
       setError('Please drop a CSV file');
+      setFile(null);
+      setResult(null);
+      setPreAnalysis(null);
     }
   };
 
@@ -782,18 +946,19 @@ const Index = () => {
                 <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'center' }}>
                   <button 
                     onClick={processFile} 
-                    disabled={isProcessing}
+                    disabled={isProcessing || isAnalyzing || (preAnalysis && preAnalysis.issues.length > 0)}
                     style={{ 
-                      backgroundColor: isProcessing ? '#9ca3af' : '#059669', 
+                      backgroundColor: (isProcessing || isAnalyzing || (preAnalysis && preAnalysis.issues.length > 0)) ? '#9ca3af' : '#059669', 
                       color: 'white', 
                       padding: '8px 24px', 
                       borderRadius: '8px', 
                       fontWeight: '500', 
                       border: 'none',
-                      cursor: isProcessing ? 'not-allowed' : 'pointer'
+                      cursor: (isProcessing || isAnalyzing || (preAnalysis && preAnalysis.issues.length > 0)) ? 'not-allowed' : 'pointer',
+                      opacity: (isProcessing || isAnalyzing || (preAnalysis && preAnalysis.issues.length > 0)) ? 0.6 : 1
                     }}
                   >
-                    {isProcessing ? 'Processing...' : 'Convert to JSON'}
+                    {isAnalyzing ? '🔍 Analyzing CSV...' : isProcessing ? '⏳ Processing...' : (preAnalysis && preAnalysis.issues.length > 0) ? '⛔ Fix Issues Before Converting' : 'Convert to JSON'}
                   </button>
                 </div>
               )}
@@ -964,10 +1129,97 @@ value,unit,value,value,unit
 
         {/* Error Display */}
         {error && (
-          <div style={{ backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', padding: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <AlertCircle style={{ width: '16px', height: '16px', color: '#dc2626' }} />
-              <p style={{ color: '#b91c1c' }}>{error}</p>
+          <div style={{ backgroundColor: '#fef2f2', border: '2px solid #ef4444', borderRadius: '8px', padding: '24px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}>
+            <div style={{ display: 'flex', alignItems: 'start', gap: '12px' }}>
+              <AlertCircle style={{ width: '24px', height: '24px', color: '#dc2626', flexShrink: 0, marginTop: '2px' }} />
+              <div style={{ flex: 1 }}>
+                <h3 style={{ fontSize: '18px', fontWeight: 'bold', color: '#991b1b', marginBottom: '8px' }}>Conversion Error</h3>
+                <p style={{ color: '#b91c1c', whiteSpace: 'pre-line' }}>{error}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Pre-Analysis Section - Shows immediately after file upload */}
+        {preAnalysis && (
+          <div style={{ 
+            border: `2px solid ${preAnalysis.issues.length > 0 ? '#ef4444' : '#10b981'}`, 
+            borderRadius: '8px', 
+            padding: '24px', 
+            backgroundColor: preAnalysis.issues.length > 0 ? '#fef2f2' : '#f0fdf4',
+            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'start', gap: '12px', marginBottom: '16px' }}>
+              <AlertCircle style={{ 
+                width: '24px', 
+                height: '24px', 
+                color: preAnalysis.issues.length > 0 ? '#dc2626' : '#059669',
+                flexShrink: 0,
+                marginTop: '2px'
+              }} />
+              <div style={{ flex: 1 }}>
+                <h3 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {preAnalysis.issues.length > 0 ? (
+                    <>
+                      <span style={{ color: '#991b1b' }}>❌ CSV Structure Issues Detected</span>
+                      <span style={{ fontSize: '14px', fontWeight: 'normal', color: '#b91c1c' }}>({preAnalysis.issues.length} issues)</span>
+                    </>
+                  ) : (
+                    <span style={{ color: '#065f46' }}>✅ CSV Structure Looks Good</span>
+                  )}
+                </h3>
+                
+                {/* Structure Info */}
+                <div style={{ backgroundColor: 'rgba(255, 255, 255, 0.7)', borderRadius: '8px', padding: '16px', marginBottom: '16px', fontSize: '14px' }}>
+                  <h4 style={{ fontWeight: 600, marginBottom: '8px', color: '#111827' }}>📊 Detected Structure:</h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', color: '#374151' }}>
+                    <div>• Total rows: <strong>{preAnalysis.structure.totalRows}</strong></div>
+                    <div>• declared_name column: {preAnalysis.structure.declaredNameFound ? 
+                      <span style={{ color: '#059669' }}>✓ Found at column {preAnalysis.structure.declaredNameCol + 1}</span> : 
+                      <span style={{ color: '#dc2626' }}>✗ Not found</span>
+                    }</div>
+                    <div>• Data Type row: {preAnalysis.structure.dataTypeRowFound ? 
+                      <span style={{ color: '#059669' }}>✓ Found at row {preAnalysis.structure.dataTypeRow + 1}</span> : 
+                      <span style={{ color: '#d97706' }}>⚠ Not found</span>
+                    }</div>
+                    <div>• Data rows start: {preAnalysis.structure.dataStartRow !== -1 ? 
+                      <span style={{ color: '#059669' }}>✓ Row {preAnalysis.structure.dataStartRow + 1}</span> : 
+                      <span style={{ color: '#dc2626' }}>✗ Cannot determine</span>
+                    }</div>
+                    <div>• Estimated data rows: <strong>{preAnalysis.structure.estimatedDataRows}</strong></div>
+                  </div>
+                </div>
+                
+                {/* Issues List */}
+                {preAnalysis.issues.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <h4 style={{ fontWeight: 600, color: '#991b1b' }}>🔧 Required Fixes:</h4>
+                    {preAnalysis.issues.map((issue, idx) => (
+                      <div key={idx} style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '12px', borderLeft: '4px solid #ef4444' }}>
+                        <div style={{ fontWeight: 500, color: '#991b1b' }}>{issue}</div>
+                      </div>
+                    ))}
+                    
+                    <div style={{ backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '16px', marginTop: '8px' }}>
+                      <h4 style={{ fontWeight: 600, color: '#1e40af', marginBottom: '8px' }}>💡 Expected CSV Structure:</h4>
+                      <div style={{ fontSize: '13px', color: '#1e3a8a', display: 'flex', flexDirection: 'column', gap: '4px', fontFamily: 'monospace' }}>
+                        <div>Row 1: Empty or "Object"</div>
+                        <div>Row 2: "Data Type" | string | real | int | ...</div>
+                        <div>Row 3: "Object" | declared_name | PropertyName1 | PropertyName2 | ...</div>
+                        <div>Row 4: "Nested_object_1" | (empty) | SubProperty | SubProperty | ...</div>
+                        <div>Row 5+: More nested levels or data starts</div>
+                        <div style={{ color: '#1e40af', fontWeight: 'bold', marginTop: '8px' }}>Then: DATA ROWS with actual values</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                {preAnalysis.issues.length === 0 && (
+                  <div style={{ color: '#065f46', fontSize: '14px' }}>
+                    Your CSV structure looks valid. Click "Convert to JSON" to proceed with conversion.
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
