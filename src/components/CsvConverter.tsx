@@ -167,16 +167,56 @@ const CsvConverter = () => {
       
       console.log('Detection results:', { declaredNameCol, dataStartRow, dataTypeRow, requirementClassRow });
       
+      // Validate detection results
       if (declaredNameCol === -1) {
         console.error('Available header data:', rows.slice(0, 8));
-        setError('Could not find declared_name column in CSV headers. Please ensure one of the header cells contains "declared_name".');
+        const errorMsg = 'Could not find "declared_name" column in CSV headers. Please ensure one of the header cells contains exactly "declared_name".';
+        setError(errorMsg);
+        setIsProcessing(false);
         return;
       }
       
+      // Check if we have proper structure
       if (dataStartRow === -1) {
-        // If we can't auto-detect, assume data starts after 7 header rows (based on your image)
-        dataStartRow = 7;
-        console.log('Could not auto-detect data start, assuming row 7');
+        // Count rows that look like headers
+        let headerLikeRows = 0;
+        for (let i = 0; i < Math.min(rows.length, 10); i++) {
+          const hasPattern = rows[i].some(cell => {
+            if (!cell) return false;
+            const lower = cell.toLowerCase().trim();
+            return (
+              lower === 'declared_name' ||
+              lower === 'requirement class' ||
+              lower === 'data type' ||
+              lower === 'data_type' ||
+              lower.startsWith('nested_object_') ||
+              lower === 'object'
+            );
+          });
+          if (hasPattern) headerLikeRows = i + 1;
+        }
+        
+        if (headerLikeRows > 0 && headerLikeRows < rows.length) {
+          dataStartRow = headerLikeRows;
+          console.log('Auto-detected data start at row:', dataStartRow);
+        } else {
+          const errorMsg = `Could not detect where data rows begin. Found ${headerLikeRows} header-like rows but no clear data section. Please check your CSV structure:\n\n` +
+            `Expected structure:\n` +
+            `- Header rows with: Object, nested_object_N, declared_name, requirement_class, data_type\n` +
+            `- Then data rows\n\n` +
+            `Your CSV has ${rows.length} total rows with unclear structure.`;
+          setError(errorMsg);
+          setIsProcessing(false);
+          return;
+        }
+      }
+      
+      // Validate we have enough data
+      if (dataStartRow >= rows.length) {
+        const errorMsg = `Data section starts at row ${dataStartRow + 1}, but CSV only has ${rows.length} rows. No data rows found!`;
+        setError(errorMsg);
+        setIsProcessing(false);
+        return;
       }
       
       // Extract header rows dynamically
@@ -691,8 +731,10 @@ const CsvConverter = () => {
       });
 
     } catch (err) {
-      setError('Error processing file: ' + (err as Error).message);
-    } finally {
+      const errorMsg = 'Error processing file: ' + (err as Error).message;
+      console.error('Conversion error:', err);
+      console.error('Error stack:', (err as Error).stack);
+      setError(errorMsg);
       setIsProcessing(false);
     }
   };
@@ -785,11 +827,14 @@ const CsvConverter = () => {
     if (selectedFile) {
       if (!selectedFile.name.toLowerCase().endsWith('.csv')) {
         setError('Please select a CSV file');
+        setFile(null);
+        setResult(null);
         return;
       }
       setFile(selectedFile);
-      setError('');
+      setError(''); // Clear any previous errors
       setResult(null);
+      console.log('File selected:', selectedFile.name, selectedFile.size, 'bytes');
     }
   };
 
@@ -798,10 +843,13 @@ const CsvConverter = () => {
     const droppedFile = event.dataTransfer.files[0];
     if (droppedFile && droppedFile.name.toLowerCase().endsWith('.csv')) {
       setFile(droppedFile);
-      setError('');
+      setError(''); // Clear any previous errors
       setResult(null);
+      console.log('File dropped:', droppedFile.name, droppedFile.size, 'bytes');
     } else {
       setError('Please drop a CSV file');
+      setFile(null);
+      setResult(null);
     }
   };
 
@@ -868,20 +916,33 @@ const CsvConverter = () => {
             <button 
               onClick={processFile} 
               disabled={isProcessing}
-              className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-medium disabled:opacity-50"
+              className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             >
-              {isProcessing ? 'Processing...' : 'Convert to JSON'}
+              {isProcessing ? (
+                <span className="flex items-center gap-2">
+                  <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Processing...
+                </span>
+              ) : (
+                'Convert to JSON'
+              )}
             </button>
           </div>
         )}
       </div>
 
-      {/* Error Display */}
+      {/* Error Display - Make it very prominent */}
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="h-4 w-4 text-red-600" />
-            <p className="text-red-800">{error}</p>
+        <div className="bg-red-50 border-2 border-red-400 rounded-lg p-6 shadow-lg">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="h-6 w-6 text-red-600 mt-0.5 flex-shrink-0" />
+            <div className="flex-1">
+              <h3 className="text-lg font-bold text-red-900 mb-2">Conversion Error</h3>
+              <p className="text-red-800 whitespace-pre-line">{error}</p>
+            </div>
           </div>
         </div>
       )}
