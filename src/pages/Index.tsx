@@ -139,7 +139,7 @@ const Index = () => {
         }
       }
       
-      // NEW: Check for gaps in nested_object numbering
+      // NEW: Check for gaps in nested_object numbering AND blank rows between them
       const nestedObjectRows: { row: number; num: number }[] = [];
       for (let rowIndex = 0; rowIndex < Math.min(rows.length, 20); rowIndex++) {
         const firstCell = rows[rowIndex][0];
@@ -152,12 +152,27 @@ const Index = () => {
       }
       
       if (nestedObjectRows.length > 0) {
-        nestedObjectRows.sort((a, b) => a.num - b.num);
+        nestedObjectRows.sort((a, b) => a.row - b.row); // Sort by row position
+        
+        // Check for blank rows BETWEEN nested_object rows
+        for (let i = 0; i < nestedObjectRows.length - 1; i++) {
+          const currentRow = nestedObjectRows[i].row;
+          const nextRow = nestedObjectRows[i + 1].row;
+          
+          if (nextRow - currentRow > 1) {
+            // There's a gap - check if there are blank rows
+            const gapSize = nextRow - currentRow - 1;
+            issues.push(`❌ CRITICAL: Gap of ${gapSize} blank row(s) between nested_object_${nestedObjectRows[i].num} (row ${currentRow + 1}) and nested_object_${nestedObjectRows[i + 1].num} (row ${nextRow + 1}). All nested_object rows must be consecutive!`);
+            console.error(`❌ Blank rows between nested_object_${nestedObjectRows[i].num} and nested_object_${nestedObjectRows[i + 1].num}`);
+          }
+        }
+        
+        // Check for missing numbers in sequence
         const numbers = nestedObjectRows.map(n => n.num);
+        numbers.sort((a, b) => a - b);
         const minNum = Math.min(...numbers);
         const maxNum = Math.max(...numbers);
         
-        // Check for gaps
         const missingNumbers: number[] = [];
         for (let i = minNum; i <= maxNum; i++) {
           if (!numbers.includes(i)) {
@@ -176,7 +191,7 @@ const Index = () => {
           console.warn(`⚠️ nested_object numbering starts at ${minNum}, not 1`);
         }
         
-        console.log(`Found nested_object rows:`, nestedObjectRows.map(n => `nested_object_${n.num}`).join(', '));
+        console.log(`Found nested_object rows:`, nestedObjectRows.map(n => `nested_object_${n.num} at row ${n.row + 1}`).join(', '));
       }
       
       // Collect basic issues
