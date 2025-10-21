@@ -1,13 +1,18 @@
 import React, { useState, useRef } from 'react';
 import Papa from 'papaparse';
-import { Upload, Download, FileText, CheckCircle, AlertCircle, Copy } from 'lucide-react';
+import { Upload, Download, FileText, CheckCircle, AlertCircle, Copy, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface ValidationWarning {
   type: string;
+  category: 'schema' | 'data_quality' | 'naming' | 'structure';
+  severity: 'critical' | 'warning' | 'info';
   message: string;
+  recommendation: string;
   row?: number;
   column?: number;
   details?: string[];
+  examples?: string[];
+  idealFormat?: string;
 }
 
 interface ConversionResult {
@@ -23,6 +28,7 @@ const CsvConverter = () => {
   const [result, setResult] = useState<ConversionResult | null>(null);
   const [error, setError] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [expandedWarnings, setExpandedWarnings] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const convertValue = (value: string, dataType: string, unit: string) => {
@@ -135,15 +141,19 @@ const CsvConverter = () => {
         }
         
         // Find where data rows start (after all header rows)
-        const hasHeaderPattern = row.some(cell => 
-          cell && (
-            cell.toLowerCase().includes('requirement') ||
-            cell.toLowerCase().includes('data_type') ||
-            cell.toLowerCase().includes('object') ||
-            cell.toLowerCase().includes('nested_object') ||
-            cell.toLowerCase().includes('declared_name')
-          )
-        );
+        // More precise pattern matching: only match exact header keywords, not general words like "Object"
+        const hasHeaderPattern = row.some(cell => {
+          if (!cell) return false;
+          const lower = cell.toLowerCase().trim();
+          return (
+            lower === 'declared_name' ||
+            lower === 'requirement class' ||
+            lower === 'data type' ||
+            lower === 'data_type' ||
+            lower.startsWith('nested_object_') ||
+            (lower === 'object' && row[0] === cell) // Only if "Object" is in first column as header
+          );
+        });
         
         console.log(`Row ${rowIndex} hasHeaderPattern: ${hasHeaderPattern}`);
         
@@ -185,10 +195,16 @@ const CsvConverter = () => {
           const dataTypeValue = headerRows[dataTypeRow][colIndex];
           const hasData = dataRows.some(row => row[colIndex] && row[colIndex].trim() !== '');
           if (hasData && (!dataTypeValue || dataTypeValue.trim() === '')) {
+            const exampleData = dataRows.find(row => row[colIndex] && row[colIndex].trim())![colIndex];
             warnings.push({
               type: 'missing_data_type',
-              message: 'Column missing data type',
-              column: colIndex + 1
+              category: 'schema',
+              severity: 'critical',
+              message: `Column ${colIndex + 1} has data but no data type specified`,
+              recommendation: 'Add data type (real, int, or string) in the data_type row for this column',
+              column: colIndex + 1,
+              examples: [`Data found: "${exampleData}"`],
+              idealFormat: 'Data Type row should contain: "real" or "int" or "string"'
             });
           }
         }
@@ -202,36 +218,59 @@ const CsvConverter = () => {
         declaredNames.indexOf(name) !== index
       );
       if (duplicates.length > 0) {
+        const uniqueDuplicates = [...new Set(duplicates)];
         warnings.push({
           type: 'duplicate_declared_names',
-          message: 'Duplicate declared_name values found',
-          details: [...new Set(duplicates)]
+          category: 'naming',
+          severity: 'critical',
+          message: `${uniqueDuplicates.length} duplicate declared_name value(s) found`,
+          recommendation: 'Each declared_name must be unique. Rename duplicates with unique identifiers.',
+          details: uniqueDuplicates,
+          examples: uniqueDuplicates.slice(0, 3),
+          idealFormat: 'declared_name values must be unique across all rows'
         });
       }
       
       // Check 3: declared_name with spaces or invalid characters
+      const invalidNames: string[] = [];
       declaredNames.forEach((name, index) => {
         if (/[^\w\-]/.test(name)) {
+          invalidNames.push(name);
           warnings.push({
             type: 'invalid_declared_name',
-            message: `Invalid declared_name "${name}" contains spaces or unicode characters`,
-            row: dataStartRow + index + 1
+            category: 'naming',
+            severity: 'critical',
+            message: `Invalid characters in declared_name: "${name}"`,
+            recommendation: 'Replace spaces with underscores, remove unicode/special characters',
+            row: dataStartRow + index + 1,
+            examples: [`"${name}" → "${name.replace(/[^\w\-]/g, '_')}"`],
+            idealFormat: 'Use only: letters, numbers, underscores, and hyphens (e.g., "battery_voltage")'
           });
         }
       });
       
       // Check 4: Data with embedded units (like "15 mm")
+      const embeddedUnitExamples: string[] = [];
       for (let rowIndex = 0; rowIndex < dataRows.length; rowIndex++) {
         const dataRow = dataRows[rowIndex];
         for (let colIndex = 0; colIndex < dataRow.length; colIndex++) {
           if (colIndex === declaredNameCol) continue;
           const value = dataRow[colIndex];
           if (value && /^\d+\.?\d*\s+(mm|m|cm|km|kg|g|kW|MW|kWh|°C|°F|Hz|kHz|MHz)/.test(value.trim())) {
+            const match = value.trim().match(/^(\d+\.?\d*)\s+(\w+)$/);
+            if (match && embeddedUnitExamples.length < 3) {
+              embeddedUnitExamples.push(`"${value}" → Split into value: ${match[1]}, unit: ${match[2]}`);
+            }
             warnings.push({
               type: 'embedded_unit',
-              message: `Value "${value}" contains embedded unit`,
+              category: 'data_quality',
+              severity: 'warning',
+              message: `Value "${value}" has embedded unit in cell`,
+              recommendation: 'Separate values and units into different columns (value column + unit column)',
               row: dataStartRow + rowIndex + 1,
-              column: colIndex + 1
+              column: colIndex + 1,
+              examples: embeddedUnitExamples.length > 0 ? [embeddedUnitExamples[0]] : [],
+              idealFormat: 'Value column: "15", Unit column: "mm" (separate columns)'
             });
           }
         }
@@ -261,8 +300,13 @@ const CsvConverter = () => {
         if (hasNestedObjectLabel && nestingPath.length === 1) {
           warnings.push({
             type: 'missing_top_level',
-            message: 'Column has nested object label but no top-level object key',
-            column: colIndex + 1
+            category: 'structure',
+            severity: 'warning',
+            message: `Column ${colIndex + 1} marked as nested but missing parent object`,
+            recommendation: 'Add a top-level object name in the first structure row before nested_object_N',
+            column: colIndex + 1,
+            examples: [`Current: nested_object_1 → property`],
+            idealFormat: 'Should be: ParentObject → nested_object_1 → property'
           });
         }
       }
@@ -286,44 +330,43 @@ const CsvConverter = () => {
           if (uniqueUnits.length > 1) {
             warnings.push({
               type: 'inconsistent_units',
-              message: 'Column has inconsistent units',
+              category: 'data_quality',
+              severity: 'warning',
+              message: `Column ${colIndex + 1} has mixed units: ${uniqueUnits.join(', ')}`,
+              recommendation: 'Standardize all units in this column to a single unit type',
               column: colIndex + 1,
-              details: uniqueUnits
+              details: uniqueUnits,
+              examples: uniqueUnits.slice(0, 3).map(u => `Found: "${u}"`),
+              idealFormat: 'All values in a unit column should use the same unit (e.g., all "mm" or all "m")'
             });
           }
         }
       }
       
       // Check 7: Filled cells in first column under nested_objects list
-      console.log('=== CHECK 7: First Column Validation ===');
-      console.log('Header rows count:', headerRows.length);
-      console.log('requirementClassRow:', requirementClassRow);
-      console.log('dataTypeRow:', dataTypeRow);
-      
       for (let headerRowIndex = 0; headerRowIndex < headerRows.length; headerRowIndex++) {
         const firstColValue = headerRows[headerRowIndex][0];
-        
-        console.log(`Row ${headerRowIndex}: firstColValue = "${firstColValue}"`);
         
         // Only skip specific expected rows
         const isDeclaredNameRow = firstColValue && firstColValue.toLowerCase().trim() === 'declared_name';
         const isRequirementRow = headerRowIndex === requirementClassRow;
         const isDataTypeRow = headerRowIndex === dataTypeRow;
-        
-        console.log(`  isDeclaredNameRow: ${isDeclaredNameRow}, isRequirementRow: ${isRequirementRow}, isDataTypeRow: ${isDataTypeRow}`);
+        const isObjectHeaderRow = firstColValue && firstColValue.toLowerCase().trim() === 'object';
         
         // If first column has ANY value in a non-expected row, warn
-        if (!isDeclaredNameRow && !isRequirementRow && !isDataTypeRow && firstColValue && firstColValue.trim() !== '') {
-          console.log(`  ⚠️ WARNING: Found unexpected value in first column!`);
+        if (!isDeclaredNameRow && !isRequirementRow && !isDataTypeRow && !isObjectHeaderRow && firstColValue && firstColValue.trim() !== '') {
           warnings.push({
             type: 'invalid_first_column',
-            message: `First column should be empty in nested object structure rows, found "${firstColValue}"`,
-            row: headerRowIndex + 1
+            category: 'structure',
+            severity: 'warning',
+            message: `Unexpected value "${firstColValue}" in first column of header row ${headerRowIndex + 1}`,
+            recommendation: 'First column should only contain: "declared_name", "Requirement Class", "Data Type", or "Object" labels',
+            row: headerRowIndex + 1,
+            examples: [`Found: "${firstColValue}"`],
+            idealFormat: 'First column in structure rows should be empty (except for the 3-4 label rows)'
           });
         }
       }
-      
-      console.log('Total warnings after Check 7:', warnings.length);
       
       // Check 8: Value/unit mismatch - find columns with shared nested object
       const valueUnitPairs = new Map<string, { valueCol: number; unitCol: number }>();
@@ -363,6 +406,7 @@ const CsvConverter = () => {
       }
       
       // Check for value/unit mismatches
+      const mismatchExamples: string[] = [];
       valueUnitPairs.forEach((pair, pathKey) => {
         if (pair.valueCol !== -1 && pair.unitCol !== -1) {
           for (let rowIndex = 0; rowIndex < dataRows.length; rowIndex++) {
@@ -373,16 +417,159 @@ const CsvConverter = () => {
             const hasUnit = unitCell && unitCell.trim() !== '';
             
             if (hasValue !== hasUnit) {
+              const example = `Row ${dataStartRow + rowIndex + 1}: ${hasValue ? 'has value' : 'empty'} but ${hasUnit ? 'has unit' : 'no unit'}`;
+              if (mismatchExamples.length < 3) mismatchExamples.push(example);
+              
               warnings.push({
                 type: 'value_unit_mismatch',
-                message: `Value/unit mismatch for "${pathKey.replace(/\|/g, ' > ')}"`,
+                category: 'data_quality',
+                severity: 'warning',
+                message: `Value/unit mismatch in "${pathKey.replace(/\|/g, ' > ')}"`,
+                recommendation: 'Ensure both value and unit are filled or both are empty for each row',
                 row: dataStartRow + rowIndex + 1,
-                details: [`Value: ${hasValue ? 'filled' : 'empty'}, Unit: ${hasUnit ? 'filled' : 'empty'}`]
+                details: [`Value: ${hasValue ? 'filled' : 'empty'}, Unit: ${hasUnit ? 'filled' : 'empty'}`],
+                examples: mismatchExamples,
+                idealFormat: 'Either both value AND unit should be filled, or both should be empty'
               });
             }
           }
         }
       });
+      
+      // NEW Check 9: Header row structure validation
+      const hasRequirementClass = requirementClassRow !== -1;
+      const hasDataType = dataTypeRow !== -1;
+      const hasDeclaredName = declaredNameCol !== -1;
+      
+      if (!hasRequirementClass || !hasDataType || !hasDeclaredName) {
+        const missing: string[] = [];
+        if (!hasDeclaredName) missing.push('declared_name');
+        if (!hasRequirementClass) missing.push('requirement_class');
+        if (!hasDataType) missing.push('data_type');
+        
+        warnings.push({
+          type: 'missing_header_rows',
+          category: 'schema',
+          severity: 'critical',
+          message: `Missing required header rows: ${missing.join(', ')}`,
+          recommendation: 'Ensure your CSV has rows for: declared_name, requirement_class, and data_type',
+          examples: missing.map(m => `Missing: ${m}`),
+          idealFormat: 'CSV should have header rows in this order: Object labels, nested_object_N, declared_name, requirement_class, data_type, then data rows'
+        });
+      }
+      
+      // NEW Check 10: Empty columns with headers
+      for (let colIndex = 0; colIndex < headerRows[0].length; colIndex++) {
+        if (colIndex === declaredNameCol) continue;
+        
+        const hasHeader = headerRows.some(row => row[colIndex] && row[colIndex].trim() !== '');
+        const hasData = dataRows.some(row => row[colIndex] && row[colIndex].trim() !== '');
+        
+        if (hasHeader && !hasData) {
+          const headerValues = headerRows.map(row => row[colIndex]).filter(v => v && v.trim()).join(' > ');
+          warnings.push({
+            type: 'empty_column',
+            category: 'data_quality',
+            severity: 'info',
+            message: `Column ${colIndex + 1} has headers but no data`,
+            recommendation: 'Either add data to this column or remove the column entirely',
+            column: colIndex + 1,
+            examples: [`Headers: ${headerValues}`],
+            idealFormat: 'Columns with headers should contain at least some data values'
+          });
+        }
+      }
+      
+      // NEW Check 11: Requirement class consistency
+      if (requirementClassRow !== -1) {
+        const validClasses = ['mandatory', 'optional', 'conditional', 'recommended'];
+        for (let colIndex = 0; colIndex < headerRows[requirementClassRow].length; colIndex++) {
+          if (colIndex === declaredNameCol) continue;
+          const reqClass = headerRows[requirementClassRow][colIndex];
+          if (reqClass && reqClass.trim() && !validClasses.includes(reqClass.toLowerCase().trim())) {
+            warnings.push({
+              type: 'invalid_requirement_class',
+              category: 'schema',
+              severity: 'warning',
+              message: `Invalid requirement class "${reqClass}" in column ${colIndex + 1}`,
+              recommendation: 'Use only: mandatory, optional, conditional, or recommended',
+              column: colIndex + 1,
+              examples: [`Found: "${reqClass}"`],
+              idealFormat: 'Valid values: "mandatory", "optional", "conditional", "recommended"'
+            });
+          }
+        }
+      }
+      
+      // NEW Check 12: Nested object numbering gaps
+      const nestedObjectPattern = /nested_object_(\d+)/i;
+      const nestedObjectNumbers = new Set<number>();
+      
+      headerRows.forEach(row => {
+        row.forEach(cell => {
+          if (cell) {
+            const match = cell.match(nestedObjectPattern);
+            if (match) {
+              nestedObjectNumbers.add(parseInt(match[1]));
+            }
+          }
+        });
+      });
+      
+      if (nestedObjectNumbers.size > 0) {
+        const numbers = Array.from(nestedObjectNumbers).sort((a, b) => a - b);
+        for (let i = 1; i < numbers[numbers.length - 1]; i++) {
+          if (!numbers.includes(i)) {
+            warnings.push({
+              type: 'nested_object_gap',
+              category: 'structure',
+              severity: 'warning',
+              message: `Gap in nested_object numbering: missing nested_object_${i}`,
+              recommendation: 'Nested objects should be numbered consecutively: nested_object_1, nested_object_2, etc.',
+              examples: [`Found: ${numbers.map(n => `nested_object_${n}`).join(', ')}`],
+              idealFormat: 'Use consecutive numbering: nested_object_1, nested_object_2, nested_object_3...'
+            });
+          }
+        }
+      }
+      
+      // NEW Check 13: Data type validation
+      if (dataTypeRow !== -1) {
+        const validTypes = ['real', 'int', 'string', 'integer'];
+        for (let colIndex = 0; colIndex < headerRows[dataTypeRow].length; colIndex++) {
+          if (colIndex === declaredNameCol) continue;
+          const dataType = headerRows[dataTypeRow][colIndex];
+          if (dataType && dataType.trim() && !validTypes.includes(dataType.toLowerCase().trim())) {
+            warnings.push({
+              type: 'invalid_data_type',
+              category: 'schema',
+              severity: 'warning',
+              message: `Invalid data type "${dataType}" in column ${colIndex + 1}`,
+              recommendation: 'Use only: real (for decimals), int/integer (for whole numbers), or string',
+              column: colIndex + 1,
+              examples: [`Found: "${dataType}"`],
+              idealFormat: 'Valid data types: "real", "int", "string"'
+            });
+          }
+        }
+      }
+      
+      // NEW Check 14: Column alignment - detect potential misalignment
+      const columnCounts = dataRows.map(row => row.filter(cell => cell && cell.trim()).length);
+      const maxCols = Math.max(...columnCounts);
+      const minCols = Math.min(...columnCounts);
+      
+      if (maxCols - minCols > 3) {
+        warnings.push({
+          type: 'column_alignment',
+          category: 'structure',
+          severity: 'info',
+          message: `Inconsistent column counts: ${minCols} to ${maxCols} filled columns per row`,
+          recommendation: 'Check for potential column misalignment or shifted data',
+          examples: [`Some rows have ${minCols} columns, others have ${maxCols}`],
+          idealFormat: 'All data rows should have similar numbers of filled columns'
+        });
+      }
 
       // Create the JSON array
       const jsonArray: any[] = [];
@@ -535,6 +722,64 @@ const CsvConverter = () => {
     URL.revokeObjectURL(url);
   };
 
+  const downloadWarningsReport = () => {
+    if (!result || !result.warnings.length) return;
+    
+    // Group warnings by category
+    const groupedWarnings = {
+      critical: result.warnings.filter(w => w.severity === 'critical'),
+      warning: result.warnings.filter(w => w.severity === 'warning'),
+      info: result.warnings.filter(w => w.severity === 'info')
+    };
+    
+    const reportLines = [
+      '# Data Quality Report',
+      `Generated: ${new Date().toLocaleString()}`,
+      `File: ${file?.name}`,
+      `Total Issues: ${result.warnings.length}`,
+      '',
+      '## Summary',
+      `- Critical Issues: ${groupedWarnings.critical.length}`,
+      `- Warnings: ${groupedWarnings.warning.length}`,
+      `- Info: ${groupedWarnings.info.length}`,
+      '',
+    ];
+    
+    // Add issues by severity
+    ['critical', 'warning', 'info'].forEach(severity => {
+      const warnings = groupedWarnings[severity as keyof typeof groupedWarnings];
+      if (warnings.length > 0) {
+        reportLines.push(`## ${severity.toUpperCase()} Issues (${warnings.length})`);
+        reportLines.push('');
+        
+        warnings.forEach((w, idx) => {
+          reportLines.push(`### ${idx + 1}. ${w.message}`);
+          reportLines.push(`**Category:** ${w.category}`);
+          if (w.row) reportLines.push(`**Row:** ${w.row}`);
+          if (w.column) reportLines.push(`**Column:** ${w.column}`);
+          reportLines.push(`**Recommendation:** ${w.recommendation}`);
+          if (w.idealFormat) reportLines.push(`**Ideal Format:** ${w.idealFormat}`);
+          if (w.examples && w.examples.length > 0) {
+            reportLines.push(`**Examples:**`);
+            w.examples.forEach(ex => reportLines.push(`  - ${ex}`));
+          }
+          reportLines.push('');
+        });
+      }
+    });
+    
+    const reportText = reportLines.join('\n');
+    const blob = new Blob([reportText], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = file?.name.replace('.csv', '-quality-report.md') || 'quality-report.md';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0];
     if (selectedFile) {
@@ -644,40 +889,159 @@ const CsvConverter = () => {
       {/* Results */}
       {result && (
         <div className="space-y-6">
-          {/* Warnings */}
-          {result.warnings.length > 0 && (
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-              <div className="flex items-start gap-2 mb-3">
-                <AlertCircle className="h-5 w-5 text-yellow-600 mt-0.5" />
-                <div className="flex-1">
-                  <h3 className="font-semibold text-yellow-900 mb-2">
-                    Quality Warnings ({result.warnings.length})
-                  </h3>
-                  <p className="text-sm text-yellow-800 mb-3">
-                    The following issues were detected. The conversion completed, but you may want to review these:
-                  </p>
-                  <div className="space-y-2">
-                    {result.warnings.map((warning, idx) => (
-                      <div key={idx} className="bg-white rounded p-3 text-sm">
-                        <div className="font-medium text-yellow-900">{warning.message}</div>
-                        {warning.row && (
-                          <div className="text-yellow-700 mt-1">Row: {warning.row}</div>
-                        )}
-                        {warning.column && (
-                          <div className="text-yellow-700 mt-1">Column: {warning.column}</div>
-                        )}
-                        {warning.details && warning.details.length > 0 && (
-                          <div className="text-yellow-700 mt-1">
-                            Values: {warning.details.join(', ')}
-                          </div>
-                        )}
+          {/* Enhanced Warnings Display */}
+          {result.warnings.length > 0 && (() => {
+            const groupedWarnings = {
+              critical: result.warnings.filter(w => w.severity === 'critical'),
+              warning: result.warnings.filter(w => w.severity === 'warning'),
+              info: result.warnings.filter(w => w.severity === 'info')
+            };
+            
+            const getSeverityColor = (severity: string) => {
+              switch(severity) {
+                case 'critical': return { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-900', badge: 'bg-red-600' };
+                case 'warning': return { bg: 'bg-yellow-50', border: 'border-yellow-200', text: 'text-yellow-900', badge: 'bg-yellow-600' };
+                case 'info': return { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-900', badge: 'bg-blue-600' };
+                default: return { bg: 'bg-gray-50', border: 'border-gray-200', text: 'text-gray-900', badge: 'bg-gray-600' };
+              }
+            };
+            
+            return (
+              <div className="bg-gradient-to-r from-yellow-50 to-orange-50 border-2 border-yellow-300 rounded-lg p-6 shadow-lg">
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <AlertCircle className="h-6 w-6 text-yellow-700" />
+                    <div>
+                      <h3 className="text-xl font-bold text-yellow-900">
+                        Data Quality Cleanup Recommendations
+                      </h3>
+                      <p className="text-sm text-yellow-800 mt-1">
+                        {result.warnings.length} issue{result.warnings.length !== 1 ? 's' : ''} found - Conversion succeeded, but these improvements are recommended
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setExpandedWarnings(!expandedWarnings)}
+                      className="flex items-center gap-1 px-3 py-1.5 bg-white border border-yellow-300 rounded-lg text-sm font-medium text-yellow-800 hover:bg-yellow-50"
+                    >
+                      {expandedWarnings ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                      {expandedWarnings ? 'Collapse' : 'Expand'}
+                    </button>
+                    <button
+                      onClick={downloadWarningsReport}
+                      className="flex items-center gap-2 px-3 py-1.5 bg-yellow-600 text-white rounded-lg text-sm font-medium hover:bg-yellow-700"
+                    >
+                      <Download className="w-4 h-4" />
+                      Export Report
+                    </button>
+                  </div>
+                </div>
+                
+                {/* Summary Badges */}
+                <div className="flex gap-3 mb-4">
+                  {groupedWarnings.critical.length > 0 && (
+                    <div className="flex items-center gap-2 px-3 py-1.5 bg-red-100 border border-red-300 rounded-lg">
+                      <span className="w-2 h-2 bg-red-600 rounded-full"></span>
+                      <span className="text-sm font-semibold text-red-900">
+                        {groupedWarnings.critical.length} Critical
+                      </span>
+                    </div>
+                  )}
+                  {groupedWarnings.warning.length > 0 && (
+                    <div className="flex items-center gap-2 px-3 py-1.5 bg-yellow-100 border border-yellow-300 rounded-lg">
+                      <span className="w-2 h-2 bg-yellow-600 rounded-full"></span>
+                      <span className="text-sm font-semibold text-yellow-900">
+                        {groupedWarnings.warning.length} Warning{groupedWarnings.warning.length !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+                  )}
+                  {groupedWarnings.info.length > 0 && (
+                    <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-100 border border-blue-300 rounded-lg">
+                      <span className="w-2 h-2 bg-blue-600 rounded-full"></span>
+                      <span className="text-sm font-semibold text-blue-900">
+                        {groupedWarnings.info.length} Info
+                      </span>
+                    </div>
+                  )}
+                </div>
+                
+                {expandedWarnings && (
+                  <div className="space-y-4">
+                    {/* Group by Category */}
+                    {[
+                      { key: 'schema', title: '📋 Schema Structure Issues', warnings: result.warnings.filter(w => w.category === 'schema') },
+                      { key: 'data_quality', title: '🔍 Data Quality Issues', warnings: result.warnings.filter(w => w.category === 'data_quality') },
+                      { key: 'naming', title: '🏷️ Naming Convention Issues', warnings: result.warnings.filter(w => w.category === 'naming') },
+                      { key: 'structure', title: '🔧 Structural Issues', warnings: result.warnings.filter(w => w.category === 'structure') }
+                    ].filter(group => group.warnings.length > 0).map(group => (
+                      <div key={group.key} className="space-y-2">
+                        <h4 className="font-bold text-gray-900 text-sm uppercase tracking-wide">{group.title}</h4>
+                        {group.warnings.map((warning, idx) => {
+                          const colors = getSeverityColor(warning.severity);
+                          return (
+                            <div key={idx} className={`${colors.bg} border ${colors.border} rounded-lg p-4`}>
+                              <div className="flex items-start gap-3">
+                                <span className={`${colors.badge} text-white text-xs font-bold px-2 py-1 rounded uppercase mt-0.5`}>
+                                  {warning.severity}
+                                </span>
+                                <div className="flex-1 space-y-2">
+                                  <div className={`font-semibold ${colors.text}`}>{warning.message}</div>
+                                  
+                                  {/* Location Info */}
+                                  {(warning.row || warning.column) && (
+                                    <div className="text-xs text-gray-600 flex gap-3">
+                                      {warning.row && <span>📍 Row: {warning.row}</span>}
+                                      {warning.column && <span>📍 Column: {warning.column}</span>}
+                                    </div>
+                                  )}
+                                  
+                                  {/* Recommendation */}
+                                  <div className="bg-white/70 rounded p-2 border border-gray-200">
+                                    <div className="text-xs font-semibold text-gray-700 mb-1">💡 Recommendation:</div>
+                                    <div className="text-sm text-gray-800">{warning.recommendation}</div>
+                                  </div>
+                                  
+                                  {/* Examples from Data */}
+                                  {warning.examples && warning.examples.length > 0 && (
+                                    <div className="bg-white/70 rounded p-2 border border-gray-200">
+                                      <div className="text-xs font-semibold text-gray-700 mb-1">📌 Examples from your data:</div>
+                                      <div className="text-xs font-mono space-y-1">
+                                        {warning.examples.map((example, exIdx) => (
+                                          <div key={exIdx} className="text-gray-700">{example}</div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                  
+                                  {/* Ideal Format */}
+                                  {warning.idealFormat && (
+                                    <div className="bg-green-50 rounded p-2 border border-green-200">
+                                      <div className="text-xs font-semibold text-green-800 mb-1">✅ Ideal Format:</div>
+                                      <div className="text-xs font-mono text-green-900">{warning.idealFormat}</div>
+                                    </div>
+                                  )}
+                                  
+                                  {/* Additional Details */}
+                                  {warning.details && warning.details.length > 0 && !warning.examples && (
+                                    <div className="text-xs text-gray-600">
+                                      <span className="font-semibold">Values: </span>
+                                      {warning.details.slice(0, 5).join(', ')}
+                                      {warning.details.length > 5 && ` (+${warning.details.length - 5} more)`}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     ))}
                   </div>
-                </div>
+                )}
               </div>
-            </div>
-          )}
+            );
+          })()}
           
           {/* Summary Stats */}
           <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
