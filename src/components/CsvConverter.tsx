@@ -28,6 +28,19 @@ const CsvConverter = () => {
   const [result, setResult] = useState<ConversionResult | null>(null);
   const [error, setError] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [preAnalysis, setPreAnalysis] = useState<{
+    issues: string[];
+    structure: {
+      totalRows: number;
+      declaredNameFound: boolean;
+      declaredNameCol: number;
+      dataTypeRowFound: boolean;
+      dataTypeRow: number;
+      dataStartRow: number;
+      estimatedDataRows: number;
+    };
+  } | null>(null);
   const [expandedWarnings, setExpandedWarnings] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -863,34 +876,163 @@ const CsvConverter = () => {
     URL.revokeObjectURL(url);
   };
 
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const analyzeFile = async (selectedFile: File) => {
+    setIsAnalyzing(true);
+    setPreAnalysis(null);
+    setError('');
+    
+    try {
+      const csvData = await selectedFile.text();
+      const parsed = Papa.parse(csvData, {
+        skipEmptyLines: true,
+        dynamicTyping: false,
+        delimitersToGuess: [',', '\t', '|', ';']
+      });
+      
+      const rows = parsed.data as string[][];
+      const issues: string[] = [];
+      
+      // Find declared_name
+      let declaredNameCol = -1;
+      let dataTypeRow = -1;
+      let dataStartRow = -1;
+      
+      for (let rowIndex = 0; rowIndex < Math.min(rows.length, 20); rowIndex++) {
+        const row = rows[rowIndex];
+        for (let colIndex = 0; colIndex < row.length; colIndex++) {
+          if (row[colIndex] && row[colIndex].trim() === 'declared_name') {
+            declaredNameCol = colIndex;
+            break;
+          }
+        }
+        const firstCell = row[0]?.toLowerCase().trim() || '';
+        if (firstCell === 'data type' || firstCell === 'data_type') {
+          dataTypeRow = rowIndex;
+        }
+      }
+      
+      // Find data start
+      for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+        const row = rows[rowIndex];
+        const hasHeaderPattern = row.some(cell => {
+          if (!cell) return false;
+          const lower = cell.toLowerCase().trim();
+          return (
+            lower === 'declared_name' ||
+            lower === 'requirement class' ||
+            lower === 'data type' ||
+            lower === 'data_type' ||
+            lower.startsWith('nested_object_') ||
+            (lower === 'object' && row[0] === cell)
+          );
+        });
+        
+        if (!hasHeaderPattern && rowIndex > 2) {
+          const hasData = row.some(cell => cell && cell.trim() !== '');
+          if (hasData) {
+            dataStartRow = rowIndex;
+            break;
+          }
+        }
+      }
+      
+      // Auto-detect if not found
+      if (dataStartRow === -1 && declaredNameCol !== -1) {
+        let headerLikeRows = 0;
+        for (let i = 0; i < Math.min(rows.length, 15); i++) {
+          const hasPattern = rows[i].some(cell => {
+            if (!cell) return false;
+            const lower = cell.toLowerCase().trim();
+            return (
+              lower === 'declared_name' ||
+              lower === 'requirement class' ||
+              lower === 'data type' ||
+              lower === 'data_type' ||
+              lower.startsWith('nested_object_') ||
+              lower === 'object'
+            );
+          });
+          if (hasPattern) headerLikeRows = i + 1;
+        }
+        if (headerLikeRows > 0 && headerLikeRows < rows.length) {
+          dataStartRow = headerLikeRows;
+        }
+      }
+      
+      // Collect issues
+      if (declaredNameCol === -1) {
+        issues.push('❌ CRITICAL: No "declared_name" column found in first 20 rows');
+      }
+      if (dataTypeRow === -1) {
+        issues.push('⚠️ WARNING: No "Data Type" row found');
+      }
+      if (dataStartRow === -1) {
+        issues.push('❌ CRITICAL: Cannot determine where data rows begin');
+      } else if (dataStartRow >= rows.length) {
+        issues.push('❌ CRITICAL: Data section would start beyond end of file');
+      }
+      
+      const estimatedDataRows = dataStartRow !== -1 ? rows.length - dataStartRow : 0;
+      if (estimatedDataRows === 0) {
+        issues.push('❌ CRITICAL: No data rows detected');
+      }
+      
+      setPreAnalysis({
+        issues,
+        structure: {
+          totalRows: rows.length,
+          declaredNameFound: declaredNameCol !== -1,
+          declaredNameCol,
+          dataTypeRowFound: dataTypeRow !== -1,
+          dataTypeRow,
+          dataStartRow,
+          estimatedDataRows
+        }
+      });
+      
+    } catch (err) {
+      setError('Failed to analyze CSV: ' + (err as Error).message);
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0];
     if (selectedFile) {
       if (!selectedFile.name.toLowerCase().endsWith('.csv')) {
         setError('Please select a CSV file');
         setFile(null);
         setResult(null);
+        setPreAnalysis(null);
         return;
       }
       setFile(selectedFile);
-      setError(''); // Clear any previous errors
+      setError('');
       setResult(null);
       console.log('File selected:', selectedFile.name, selectedFile.size, 'bytes');
+      
+      // Immediately analyze the file
+      await analyzeFile(selectedFile);
     }
   };
 
-  const handleDrop = (event: React.DragEvent) => {
+  const handleDrop = async (event: React.DragEvent) => {
     event.preventDefault();
     const droppedFile = event.dataTransfer.files[0];
     if (droppedFile && droppedFile.name.toLowerCase().endsWith('.csv')) {
       setFile(droppedFile);
-      setError(''); // Clear any previous errors
+      setError('');
       setResult(null);
       console.log('File dropped:', droppedFile.name, droppedFile.size, 'bytes');
+      
+      // Immediately analyze the file
+      await analyzeFile(droppedFile);
     } else {
       setError('Please drop a CSV file');
       setFile(null);
       setResult(null);
+      setPreAnalysis(null);
     }
   };
 
@@ -956,10 +1098,18 @@ const CsvConverter = () => {
           <div className="mt-4 flex justify-center">
             <button 
               onClick={processFile} 
-              disabled={isProcessing}
+              disabled={isProcessing || isAnalyzing || (preAnalysis && preAnalysis.issues.length > 0)}
               className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             >
-              {isProcessing ? (
+              {isAnalyzing ? (
+                <span className="flex items-center gap-2">
+                  <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Analyzing CSV...
+                </span>
+              ) : isProcessing ? (
                 <span className="flex items-center gap-2">
                   <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -967,6 +1117,8 @@ const CsvConverter = () => {
                   </svg>
                   Processing...
                 </span>
+              ) : preAnalysis && preAnalysis.issues.length > 0 ? (
+                'Fix Issues Before Converting'
               ) : (
                 'Convert to JSON'
               )}
@@ -974,6 +1126,84 @@ const CsvConverter = () => {
           </div>
         )}
       </div>
+
+      {/* Pre-Analysis Section - Shows immediately after file upload */}
+      {preAnalysis && (
+        <div className={`border-2 rounded-lg p-6 shadow-lg ${
+          preAnalysis.issues.length > 0 
+            ? 'bg-red-50 border-red-400' 
+            : 'bg-green-50 border-green-400'
+        }`}>
+          <div className="flex items-start gap-3 mb-4">
+            <AlertCircle className={`h-6 w-6 mt-0.5 flex-shrink-0 ${
+              preAnalysis.issues.length > 0 ? 'text-red-600' : 'text-green-600'
+            }`} />
+            <div className="flex-1">
+              <h3 className="text-xl font-bold mb-2 flex items-center gap-2">
+                {preAnalysis.issues.length > 0 ? (
+                  <>
+                    <span className="text-red-900">❌ CSV Structure Issues Detected</span>
+                    <span className="text-sm font-normal text-red-700">({preAnalysis.issues.length} issues)</span>
+                  </>
+                ) : (
+                  <span className="text-green-900">✅ CSV Structure Looks Good</span>
+                )}
+              </h3>
+              
+              {/* Structure Info */}
+              <div className="bg-white/70 rounded-lg p-4 mb-4 text-sm">
+                <h4 className="font-semibold mb-2 text-gray-900">📊 Detected Structure:</h4>
+                <div className="space-y-1 text-gray-700">
+                  <div>• Total rows: <strong>{preAnalysis.structure.totalRows}</strong></div>
+                  <div>• declared_name column: {preAnalysis.structure.declaredNameFound ? 
+                    <span className="text-green-700">✓ Found at column {preAnalysis.structure.declaredNameCol + 1}</span> : 
+                    <span className="text-red-700">✗ Not found</span>
+                  }</div>
+                  <div>• Data Type row: {preAnalysis.structure.dataTypeRowFound ? 
+                    <span className="text-green-700">✓ Found at row {preAnalysis.structure.dataTypeRow + 1}</span> : 
+                    <span className="text-orange-600">⚠ Not found</span>
+                  }</div>
+                  <div>• Data rows start: {preAnalysis.structure.dataStartRow !== -1 ? 
+                    <span className="text-green-700">✓ Row {preAnalysis.structure.dataStartRow + 1}</span> : 
+                    <span className="text-red-700">✗ Cannot determine</span>
+                  }</div>
+                  <div>• Estimated data rows: <strong>{preAnalysis.structure.estimatedDataRows}</strong></div>
+                </div>
+              </div>
+              
+              {/* Issues List */}
+              {preAnalysis.issues.length > 0 && (
+                <div className="space-y-3">
+                  <h4 className="font-semibold text-red-900">🔧 Required Fixes:</h4>
+                  {preAnalysis.issues.map((issue, idx) => (
+                    <div key={idx} className="bg-white rounded-lg p-3 border-l-4 border-red-500">
+                      <div className="font-medium text-red-900">{issue}</div>
+                    </div>
+                  ))}
+                  
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mt-4">
+                    <h4 className="font-semibold text-blue-900 mb-2">💡 Expected CSV Structure:</h4>
+                    <div className="text-sm text-blue-800 space-y-1 font-mono">
+                      <div>Row 1: Empty or "Object"</div>
+                      <div>Row 2: "Data Type" | string | real | int | ...</div>
+                      <div>Row 3: "Object" | declared_name | PropertyName1 | PropertyName2 | ...</div>
+                      <div>Row 4: "Nested_object_1" | (empty) | SubProperty | SubProperty | ...</div>
+                      <div>Row 5+: More nested levels or data starts</div>
+                      <div className="text-blue-900 font-bold mt-2">Then: DATA ROWS with actual values</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {preAnalysis.issues.length === 0 && (
+                <div className="text-green-800 text-sm">
+                  Your CSV structure looks valid. Click "Convert to JSON" to proceed with conversion.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Error Display - Make it very prominent */}
       {error && (
