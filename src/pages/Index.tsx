@@ -1,6 +1,8 @@
 import React, { useState, useRef } from 'react';
 import Papa from 'papaparse';
 import { Upload, Download, FileText, CheckCircle, AlertCircle, Copy, ChevronDown, ChevronUp } from 'lucide-react';
+import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { AppSidebar } from "@/components/AppSidebar";
 
 interface ConversionResult {
   jsonOutput: string;
@@ -883,8 +885,18 @@ const Index = () => {
   };
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc', padding: '24px' }}>
-      <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+    <SidebarProvider>
+      <div className="min-h-screen flex w-full">
+        <AppSidebar />
+        
+        <div className="flex-1 flex flex-col">
+          {/* Sidebar Toggle Button */}
+          <div className="sticky top-0 z-10 bg-white border-b px-4 py-2">
+            <SidebarTrigger />
+          </div>
+          
+          <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc', padding: '24px' }}>
+            <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
         
         {/* Header */}
         <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -1153,53 +1165,6 @@ const Index = () => {
           )}
         </div>
 
-        {/* Instruction Guide */}
-        <div style={{ backgroundColor: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)', padding: '24px' }}>
-          <h2 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <FileText style={{ width: '20px', height: '20px' }} />
-            CSV Format Instructions
-          </h2>
-          
-          <div style={{ marginBottom: '16px' }}>
-            <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>
-              Your CSV file must have these required columns:
-            </p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '8px', fontSize: '14px' }}>
-              <span style={{ fontWeight: '500' }}>declared_name:</span>
-              <span>The top-level object key (e.g., "Heat Exchanger A")</span>
-              <span style={{ fontWeight: '500' }}>Object:</span>
-              <span>The main object name (e.g., "Attribute")</span>
-              <span style={{ fontWeight: '500' }}>Data Type:</span>
-              <span>Data type (e.g., "real", "int", "string")</span>
-              <span style={{ fontWeight: '500' }}>nested_object_1:</span>
-              <span>First nesting level (e.g., "additional")</span>
-              <span style={{ fontWeight: '500' }}>nested_object_2:</span>
-              <span>Second nesting level (e.g., "operating_temperature_min")</span>
-              <span style={{ fontWeight: '500' }}>value, unit, etc.:</span>
-              <span>Property columns with actual data</span>
-            </div>
-          </div>
-
-          <div style={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '16px' }}>
-            <h3 style={{ fontSize: '16px', fontWeight: '500', marginBottom: '12px' }}>Example CSV Template:</h3>
-            <pre style={{ fontSize: '12px', fontFamily: 'monospace', color: '#374151', whiteSpace: 'pre-wrap', margin: 0, overflow: 'auto' }}>
-{`,,Heat Exchanger A,Heat Exchanger A,Heat Exchanger B
-Attribute,Attribute,Attribute,Attribute,Attribute
-additional,additional,electrical,electrical,electrical
-operating_temperature_min,operating_temperature_min,voltage_max,current_max,current_max
-value,unit,value,value,unit
-5,degrees celsius,24,2,A`}
-            </pre>
-          </div>
-
-          <div style={{ marginTop: '16px', padding: '12px', backgroundColor: '#fffbeb', border: '1px solid #fbbf24', borderRadius: '6px' }}>
-            <p style={{ fontSize: '13px', color: '#92400e' }}>
-              💡 <strong>Tip:</strong> Each column defines a complete nested path through the header rows. 
-              The "declared_name" values in row 1 correspond to data rows (Heat Exchanger A in row 6, Heat Exchanger B in row 7, etc.).
-            </p>
-          </div>
-        </div>
-
         {/* Error Display */}
         {error && (
           <div style={{ backgroundColor: '#fef2f2', border: '2px solid #ef4444', borderRadius: '8px', padding: '24px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}>
@@ -1405,8 +1370,11 @@ value,unit,value,value,unit
             </div>
           </div>
         )}
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
+    </SidebarProvider>
   );
 };
 
