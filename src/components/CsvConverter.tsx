@@ -103,9 +103,14 @@ const CsvConverter = () => {
       const rows = parsed.data as string[][];
       
       if (rows.length < 3) {
-        setError('CSV must have at least 3 rows (header rows + at least 1 data row)');
+        const errorMsg = `CSV must have at least 3 rows (header rows + at least 1 data row). Your CSV has ${rows.length} rows.`;
+        console.error(errorMsg);
+        setError(errorMsg);
+        setIsProcessing(false);
         return;
       }
+
+      console.log(`CSV has ${rows.length} rows total`);
 
       // Dynamically detect header structure
       let declaredNameCol = -1;
@@ -113,19 +118,19 @@ const CsvConverter = () => {
       let dataTypeRow = -1;
       let requirementClassRow = -1;
       
+      console.log('Starting header detection...');
       console.log('Detecting header structure from CSV rows:', rows.slice(0, 8));
       
       // Find declared_name column and identify important rows
-      for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+      for (let rowIndex = 0; rowIndex < Math.min(rows.length, 20); rowIndex++) {
         const row = rows[rowIndex];
-        console.log(`Row ${rowIndex}:`, row.slice(0, 10));
         
         for (let colIndex = 0; colIndex < row.length; colIndex++) {
           const cell = row[colIndex];
-          console.log(`  Cell [${rowIndex}][${colIndex}]: "${cell}"`);
           if (cell && cell.trim() === 'declared_name') {
             declaredNameCol = colIndex;
-            console.log(`*** FOUND declared_name at row ${rowIndex}, col ${colIndex} ***`);
+            console.log(`✓ FOUND declared_name at row ${rowIndex}, col ${colIndex}`);
+            break;
           }
         }
         
@@ -133,15 +138,22 @@ const CsvConverter = () => {
         const firstCell = row[0]?.toLowerCase().trim() || '';
         if (firstCell.includes('requirement') && firstCell.includes('class')) {
           requirementClassRow = rowIndex;
-          console.log('Found requirement class row:', rowIndex);
+          console.log(`✓ Found requirement class row at: ${rowIndex}`);
         }
-        if (firstCell.includes('data') && firstCell.includes('type')) {
+        if (firstCell === 'data type' || firstCell === 'data_type') {
           dataTypeRow = rowIndex;
-          console.log('Found data type row:', rowIndex);
+          console.log(`✓ Found data type row at: ${rowIndex}`);
         }
+      }
+      
+      console.log(`Detection complete: declaredNameCol=${declaredNameCol}, dataTypeRow=${dataTypeRow}, requirementClassRow=${requirementClassRow}`);
         
-        // Find where data rows start (after all header rows)
-        // More precise pattern matching: only match exact header keywords, not general words like "Object"
+      // Find where data rows start
+      console.log('Detecting where data rows start...');
+      for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+        const row = rows[rowIndex];
+        
+        // More precise pattern matching: only match exact header keywords
         const hasHeaderPattern = row.some(cell => {
           if (!cell) return false;
           const lower = cell.toLowerCase().trim();
@@ -151,36 +163,44 @@ const CsvConverter = () => {
             lower === 'data type' ||
             lower === 'data_type' ||
             lower.startsWith('nested_object_') ||
-            (lower === 'object' && row[0] === cell) // Only if "Object" is in first column as header
+            (lower === 'object' && row[0] === cell) // Only if "Object" is in first column
           );
         });
         
-        console.log(`Row ${rowIndex} hasHeaderPattern: ${hasHeaderPattern}`);
-        
-        // Only set dataStartRow if we've processed at least a few header rows
+        // Only set dataStartRow if we've moved past header rows
         if (!hasHeaderPattern && dataStartRow === -1 && rowIndex > 2) {
-          dataStartRow = rowIndex;
-          console.log('Data rows start at row:', rowIndex);
-          break;
+          // Double check this row has actual data (not all empty)
+          const hasData = row.some(cell => cell && cell.trim() !== '');
+          if (hasData) {
+            dataStartRow = rowIndex;
+            console.log(`✓ Data rows start at row ${rowIndex}`);
+            break;
+          }
         }
       }
       
-      console.log('Detection results:', { declaredNameCol, dataStartRow, dataTypeRow, requirementClassRow });
+      console.log(`Final detection results:`, { declaredNameCol, dataStartRow, dataTypeRow, requirementClassRow });
       
-      // Validate detection results
+      // Validate detection results with detailed errors
       if (declaredNameCol === -1) {
+        console.error('❌ Could not find declared_name column');
         console.error('Available header data:', rows.slice(0, 8));
-        const errorMsg = 'Could not find "declared_name" column in CSV headers. Please ensure one of the header cells contains exactly "declared_name".';
+        const errorMsg = '❌ Could not find "declared_name" column in CSV headers.\n\n' +
+          'Please ensure one of the header cells contains exactly "declared_name".\n\n' +
+          `Searched ${Math.min(rows.length, 20)} rows and found no "declared_name" cell.`;
         setError(errorMsg);
         setIsProcessing(false);
         return;
       }
       
+      console.log('✓ declared_name column found');
+      
       // Check if we have proper structure
       if (dataStartRow === -1) {
+        console.warn('⚠️ Could not auto-detect data start row');
         // Count rows that look like headers
         let headerLikeRows = 0;
-        for (let i = 0; i < Math.min(rows.length, 10); i++) {
+        for (let i = 0; i < Math.min(rows.length, 15); i++) {
           const hasPattern = rows[i].some(cell => {
             if (!cell) return false;
             const lower = cell.toLowerCase().trim();
@@ -196,14 +216,18 @@ const CsvConverter = () => {
           if (hasPattern) headerLikeRows = i + 1;
         }
         
+        console.log(`Found ${headerLikeRows} header-like rows`);
+        
         if (headerLikeRows > 0 && headerLikeRows < rows.length) {
           dataStartRow = headerLikeRows;
-          console.log('Auto-detected data start at row:', dataStartRow);
+          console.log(`✓ Auto-detected data start at row: ${dataStartRow}`);
         } else {
-          const errorMsg = `Could not detect where data rows begin. Found ${headerLikeRows} header-like rows but no clear data section. Please check your CSV structure:\n\n` +
+          console.error('❌ Could not determine data start');
+          const errorMsg = `❌ Could not detect where data rows begin.\n\n` +
+            `Found ${headerLikeRows} header-like rows but no clear data section.\n\n` +
             `Expected structure:\n` +
-            `- Header rows with: Object, nested_object_N, declared_name, requirement_class, data_type\n` +
-            `- Then data rows\n\n` +
+            `• Header rows with: Object, nested_object_N, declared_name, requirement_class, data_type\n` +
+            `• Then data rows\n\n` +
             `Your CSV has ${rows.length} total rows with unclear structure.`;
           setError(errorMsg);
           setIsProcessing(false);
@@ -211,13 +235,30 @@ const CsvConverter = () => {
         }
       }
       
+      console.log('✓ Data start row identified');
+      
       // Validate we have enough data
       if (dataStartRow >= rows.length) {
-        const errorMsg = `Data section starts at row ${dataStartRow + 1}, but CSV only has ${rows.length} rows. No data rows found!`;
+        console.error('❌ No data rows found');
+        const errorMsg = `❌ Data section starts at row ${dataStartRow + 1}, but CSV only has ${rows.length} rows.\n\nNo data rows found!`;
         setError(errorMsg);
         setIsProcessing(false);
         return;
       }
+      
+      const dataRowCount = rows.length - dataStartRow;
+      console.log(`✓ Found ${dataRowCount} data rows (rows ${dataStartRow + 1} to ${rows.length})`);
+      
+      // Validate data type row is before data starts
+      if (dataTypeRow !== -1 && dataTypeRow >= dataStartRow) {
+        console.error('❌ Data type row is after data starts');
+        const errorMsg = `❌ Data Type row found at row ${dataTypeRow + 1}, but data starts at row ${dataStartRow + 1}.\n\nData Type row must come before data rows.`;
+        setError(errorMsg);
+        setIsProcessing(false);
+        return;
+      }
+      
+      console.log('✓ All structure validation passed. Starting conversion...');
       
       // Extract header rows dynamically
       const headerRows = rows.slice(0, dataStartRow);
