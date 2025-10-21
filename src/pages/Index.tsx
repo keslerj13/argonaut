@@ -121,7 +121,65 @@ const Index = () => {
         }
       }
       
-      // Collect issues
+      // NEW: Check for missing data types in specific columns
+      if (dataTypeRow !== -1) {
+        const missingDataTypeCols: number[] = [];
+        const dataTypeRowData = rows[dataTypeRow];
+        
+        for (let colIndex = 1; colIndex < dataTypeRowData.length; colIndex++) {
+          const dataType = dataTypeRowData[colIndex];
+          if (!dataType || dataType.trim() === '') {
+            missingDataTypeCols.push(colIndex);
+          }
+        }
+        
+        if (missingDataTypeCols.length > 0) {
+          issues.push(`❌ CRITICAL: Missing data types in ${missingDataTypeCols.length} column(s): ${missingDataTypeCols.slice(0, 5).map(c => `Col ${c + 1}`).join(', ')}${missingDataTypeCols.length > 5 ? ` and ${missingDataTypeCols.length - 5} more` : ''}`);
+          console.error(`❌ Missing data types in columns:`, missingDataTypeCols);
+        }
+      }
+      
+      // NEW: Check for gaps in nested_object numbering
+      const nestedObjectRows: { row: number; num: number }[] = [];
+      for (let rowIndex = 0; rowIndex < Math.min(rows.length, 20); rowIndex++) {
+        const firstCell = rows[rowIndex][0];
+        if (firstCell) {
+          const match = firstCell.match(/^nested_object_(\d+)$/i);
+          if (match) {
+            nestedObjectRows.push({ row: rowIndex, num: parseInt(match[1]) });
+          }
+        }
+      }
+      
+      if (nestedObjectRows.length > 0) {
+        nestedObjectRows.sort((a, b) => a.num - b.num);
+        const numbers = nestedObjectRows.map(n => n.num);
+        const minNum = Math.min(...numbers);
+        const maxNum = Math.max(...numbers);
+        
+        // Check for gaps
+        const missingNumbers: number[] = [];
+        for (let i = minNum; i <= maxNum; i++) {
+          if (!numbers.includes(i)) {
+            missingNumbers.push(i);
+          }
+        }
+        
+        if (missingNumbers.length > 0) {
+          issues.push(`⚠️ WARNING: Gap in nested_object numbering - missing: nested_object_${missingNumbers.join(', nested_object_')}`);
+          console.warn(`⚠️ Missing nested_object numbers:`, missingNumbers);
+        }
+        
+        // Check if nested_object numbering doesn't start at 1
+        if (minNum !== 1) {
+          issues.push(`⚠️ WARNING: nested_object numbering should start at 1, but starts at ${minNum}`);
+          console.warn(`⚠️ nested_object numbering starts at ${minNum}, not 1`);
+        }
+        
+        console.log(`Found nested_object rows:`, nestedObjectRows.map(n => `nested_object_${n.num}`).join(', '));
+      }
+      
+      // Collect basic issues
       if (declaredNameCol === -1) {
         issues.push('❌ CRITICAL: No "declared_name" column found in first 20 rows');
         console.error('❌ declared_name not found');
