@@ -156,7 +156,7 @@ const Index = () => {
       if (nestedObjectRows.length > 0) {
         nestedObjectRows.sort((a, b) => a.row - b.row); // Sort by row position
         
-        // Check for blank rows BETWEEN nested_object rows
+        // Check for blank rows BETWEEN nested_object rows in column 1
         for (let i = 0; i < nestedObjectRows.length - 1; i++) {
           const currentRow = nestedObjectRows[i].row;
           const nextRow = nestedObjectRows[i + 1].row;
@@ -166,6 +166,42 @@ const Index = () => {
             const gapSize = nextRow - currentRow - 1;
             issues.push(`❌ CRITICAL: Gap of ${gapSize} blank row(s) between nested_object_${nestedObjectRows[i].num} (row ${currentRow + 1}) and nested_object_${nestedObjectRows[i + 1].num} (row ${nextRow + 1}). All nested_object rows must be consecutive!`);
             console.error(`❌ Blank rows between nested_object_${nestedObjectRows[i].num} and nested_object_${nestedObjectRows[i + 1].num}`);
+          }
+        }
+        
+        // NEW: Check each column for empty cells within nested_object rows
+        const firstRowLength = rows[0]?.length || 0;
+        for (let colIndex = 2; colIndex < firstRowLength; colIndex++) {
+          const colValues: { row: number; value: string; nestedNum: number }[] = [];
+          
+          // Collect all values in this column for nested_object rows
+          for (const nestedRow of nestedObjectRows) {
+            const cellValue = rows[nestedRow.row][colIndex];
+            colValues.push({
+              row: nestedRow.row,
+              value: cellValue?.trim() || '',
+              nestedNum: nestedRow.num
+            });
+          }
+          
+          // Find first and last non-empty values
+          const firstNonEmpty = colValues.findIndex(v => v.value !== '');
+          const lastNonEmpty = colValues.length - 1 - colValues.slice().reverse().findIndex(v => v.value !== '');
+          
+          // If column has values, check for gaps between first and last
+          if (firstNonEmpty !== -1 && lastNonEmpty !== -1 && firstNonEmpty < lastNonEmpty) {
+            const emptyBetween: number[] = [];
+            for (let i = firstNonEmpty + 1; i < lastNonEmpty; i++) {
+              if (colValues[i].value === '') {
+                emptyBetween.push(colValues[i].nestedNum);
+              }
+            }
+            
+            if (emptyBetween.length > 0) {
+              const columnHeader = rows[0][colIndex] || `Col ${colIndex + 1}`;
+              issues.push(`❌ CRITICAL: Column "${columnHeader}" has empty cells in nested_object_${emptyBetween.join(', nested_object_')} rows. All nested_object values within a column must be consecutive!`);
+              console.error(`❌ Column ${colIndex} (${columnHeader}) has gaps in nested_object values`);
+            }
           }
         }
         
