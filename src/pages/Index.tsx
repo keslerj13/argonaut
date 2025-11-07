@@ -198,9 +198,10 @@ const Index = () => {
             }
             
             if (emptyBetween.length > 0) {
-              const columnHeader = rows[0][colIndex] || `Col ${colIndex + 1}`;
-              issues.push(`❌ CRITICAL: Column "${columnHeader}" has empty cells in nested_object_${emptyBetween.join(', nested_object_')} rows. All nested_object values within a column must be consecutive!`);
-              console.error(`❌ Column ${colIndex} (${columnHeader}) has gaps in nested_object values`);
+              // Get object key from row 1 (object row), fallback to data type from row 0
+              const objectKey = rows[1]?.[colIndex]?.trim() || rows[0]?.[colIndex]?.trim() || `Col ${colIndex + 1}`;
+              issues.push(`❌ CRITICAL: Column "${objectKey}" has empty cells in nested_object_${emptyBetween.join(', nested_object_')} rows. All nested_object values within a column must be consecutive!`);
+              console.error(`❌ Column ${colIndex} (${objectKey}) has gaps in nested_object values`);
             }
           }
         }
