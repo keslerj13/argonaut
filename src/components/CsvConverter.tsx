@@ -1095,7 +1095,7 @@ const CsvConverter = () => {
         </div>
         
         {file && (
-          <div className="mt-4 flex justify-center">
+          <div className="mt-4 flex justify-center gap-3">
             <button 
               onClick={processFile} 
               disabled={isProcessing || isAnalyzing || (preAnalysis && preAnalysis.issues.length > 0)}
@@ -1123,6 +1123,15 @@ const CsvConverter = () => {
                 'Convert to JSON'
               )}
             </button>
+            {result && (
+              <button
+                onClick={downloadJson}
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition-all"
+              >
+                <Download className="w-4 h-4" />
+                Download JSON
+              </button>
+            )}
           </div>
         )}
       </div>
