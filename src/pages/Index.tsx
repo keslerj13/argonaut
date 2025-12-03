@@ -1065,7 +1065,7 @@ const Index = () => {
               </div>
               
               {file && (
-                <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'center' }}>
+                <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'center', gap: '12px' }}>
                   <button 
                     onClick={processFile} 
                     disabled={isProcessing || isAnalyzing || (preAnalysis && preAnalysis.issues.length > 0)}
@@ -1082,6 +1082,26 @@ const Index = () => {
                   >
                     {isAnalyzing ? '🔍 Analyzing CSV...' : isProcessing ? '⏳ Processing...' : (preAnalysis && preAnalysis.issues.length > 0) ? '⛔ Fix Issues Before Converting' : 'Convert to JSON'}
                   </button>
+                  {result && (
+                    <button
+                      onClick={downloadOutput}
+                      style={{
+                        backgroundColor: '#2563eb',
+                        color: 'white',
+                        padding: '8px 24px',
+                        borderRadius: '8px',
+                        fontWeight: '500',
+                        border: 'none',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px'
+                      }}
+                    >
+                      <Download style={{ width: '16px', height: '16px' }} />
+                      Download JSON
+                    </button>
+                  )}
                 </div>
               )}
             </div>
