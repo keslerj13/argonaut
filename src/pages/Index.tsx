@@ -233,6 +233,42 @@ const Index = () => {
         console.log(`Found nested_object rows:`, nestedObjectRows.map(n => `nested_object_${n.num} at row ${n.row + 1}`).join(', '));
       }
       
+      // NEW: Check for #REF! and #N/A values in all cells
+      const refErrors: { col: string; row: number }[] = [];
+      const naErrors: { col: string; row: number }[] = [];
+      
+      for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+        const row = rows[rowIndex];
+        for (let colIndex = 0; colIndex < row.length; colIndex++) {
+          const cellValue = row[colIndex]?.trim() || '';
+          
+          if (cellValue === '#REF!' || cellValue.includes('#REF!')) {
+            // Get column header from Object row (row 1) or fallback
+            const colHeader = rows[1]?.[colIndex]?.trim() || `Col ${colIndex + 1}`;
+            refErrors.push({ col: colHeader, row: rowIndex + 1 });
+          }
+          
+          if (cellValue === '#N/A' || cellValue.includes('#N/A')) {
+            const colHeader = rows[1]?.[colIndex]?.trim() || `Col ${colIndex + 1}`;
+            naErrors.push({ col: colHeader, row: rowIndex + 1 });
+          }
+        }
+      }
+      
+      if (refErrors.length > 0) {
+        const firstFew = refErrors.slice(0, 5);
+        const locations = firstFew.map(e => `"${e.col}" at row ${e.row}`).join(', ');
+        issues.push(`❌ CRITICAL: Found ${refErrors.length} #REF! value(s) - ${locations}${refErrors.length > 5 ? ` and ${refErrors.length - 5} more` : ''}`);
+        console.error(`❌ Found #REF! values:`, refErrors);
+      }
+      
+      if (naErrors.length > 0) {
+        const firstFew = naErrors.slice(0, 5);
+        const locations = firstFew.map(e => `"${e.col}" at row ${e.row}`).join(', ');
+        issues.push(`❌ CRITICAL: Found ${naErrors.length} #N/A value(s) - ${locations}${naErrors.length > 5 ? ` and ${naErrors.length - 5} more` : ''}`);
+        console.error(`❌ Found #N/A values:`, naErrors);
+      }
+      
       // Collect basic issues
       if (declaredNameCol === -1) {
         issues.push('❌ CRITICAL: No "declared_name" column found in first 20 rows');
