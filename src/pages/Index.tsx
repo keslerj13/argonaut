@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import Papa from 'papaparse';
+import JSZip from 'jszip';
 import { Upload, Download, FileText, CheckCircle, AlertCircle, Copy, ChevronDown, ChevronUp } from 'lucide-react';
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
@@ -892,24 +893,93 @@ const Index = () => {
     }
   };
 
-  const downloadOutput = () => {
+  const downloadOutput = async () => {
     if (!result) return;
     
-    const fileType = mode === 'csv-to-json' ? 'application/json' : 'text/csv';
-    const fileExtension = mode === 'csv-to-json' ? '.json' : '.csv';
-    const fileName = mode === 'csv-to-json' 
-      ? (file?.name.replace('.csv', '.json') || 'converted.json')
-      : 'converted.csv';
+    // For JSON to CSV mode, use simple download
+    if (mode === 'json-to-csv') {
+      const blob = new Blob([result.jsonOutput], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'converted.csv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      return;
+    }
     
-    const blob = new Blob([result.jsonOutput], { type: fileType });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    // For CSV to JSON mode, create ZIP with individual files
+    try {
+      const jsonArray = JSON.parse(result.jsonOutput);
+      
+      if (!Array.isArray(jsonArray) || jsonArray.length === 0) {
+        alert('No records to export');
+        return;
+      }
+      
+      const zip = new JSZip();
+      
+      // Get base filename from uploaded file (without extension)
+      const baseFileName = file?.name.replace(/\.[^/.]+$/, '') || 'export';
+      
+      let skippedCount = 0;
+      let exportedCount = 0;
+      
+      for (const record of jsonArray) {
+        const guid = record._guid;
+        
+        // Validate GUID exists
+        if (!guid || typeof guid !== 'string') {
+          console.warn('Skipping record without valid _guid:', record);
+          skippedCount++;
+          continue;
+        }
+        
+        // Create a copy without _id field
+        const cleanedRecord = { ...record };
+        delete cleanedRecord._id;
+        
+        // Get first two characters of GUID for subfolder
+        const guidPrefix = guid.substring(0, 2).toLowerCase();
+        
+        // Build the path: catalog/component/<baseFileName>/<guidPrefix>/<guid>.json
+        const filePath = `catalog/component/${baseFileName}/${guidPrefix}/${guid}.json`;
+        
+        // Pretty print the JSON with 2-space indentation
+        const jsonContent = JSON.stringify(cleanedRecord, null, 2);
+        
+        zip.file(filePath, jsonContent);
+        exportedCount++;
+      }
+      
+      if (exportedCount === 0) {
+        alert('No records with valid _guid found to export');
+        return;
+      }
+      
+      // Generate ZIP file
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      
+      // Download the ZIP
+      const url = URL.createObjectURL(zipBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${baseFileName}_export.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      if (skippedCount > 0) {
+        alert(`Exported ${exportedCount} files. Skipped ${skippedCount} records without valid _guid.`);
+      }
+      
+    } catch (err) {
+      console.error('Export error:', err);
+      alert('Failed to create ZIP export: ' + (err instanceof Error ? err.message : 'Unknown error'));
+    }
   };
 
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
