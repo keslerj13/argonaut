@@ -20,6 +20,7 @@ const Index = () => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [mode, setMode] = useState<'csv-to-json' | 'json-to-csv'>('csv-to-json');
   const [jsonInput, setJsonInput] = useState<string>('');
+  const [exportDirName, setExportDirName] = useState<string>('');
   const [preAnalysis, setPreAnalysis] = useState<{
     issues: string[];
     structure: {
@@ -921,8 +922,8 @@ const Index = () => {
       
       const zip = new JSZip();
       
-      // Get base filename from uploaded file (without extension)
-      const baseFileName = file?.name.replace(/\.[^/.]+$/, '') || 'export';
+      // Use custom export directory name or fall back to uploaded filename
+      const baseFileName = exportDirName.trim() || file?.name.replace(/\.[^/.]+$/, '') || 'export';
       
       let skippedCount = 0;
       let exportedCount = 0;
@@ -1189,24 +1190,45 @@ const Index = () => {
                     {isAnalyzing ? '🔍 Analyzing CSV...' : isProcessing ? '⏳ Processing...' : (preAnalysis && preAnalysis.issues.length > 0) ? '⛔ Fix Issues Before Converting' : 'Convert to JSON'}
                   </button>
                   {result && (
-                    <button
-                      onClick={downloadOutput}
-                      style={{
-                        backgroundColor: '#2563eb',
-                        color: 'white',
-                        padding: '8px 24px',
-                        borderRadius: '8px',
-                        fontWeight: '500',
-                        border: 'none',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px'
-                      }}
-                    >
-                      <Download style={{ width: '16px', height: '16px' }} />
-                      Download JSON
-                    </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <label style={{ fontSize: '12px', color: '#6b7280', fontWeight: '500' }}>
+                          Export Directory Name
+                        </label>
+                        <input
+                          type="text"
+                          value={exportDirName}
+                          onChange={(e) => setExportDirName(e.target.value)}
+                          placeholder={file?.name.replace(/\.[^/.]+$/, '') || 'export'}
+                          style={{
+                            padding: '8px 12px',
+                            border: '1px solid #d1d5db',
+                            borderRadius: '6px',
+                            fontSize: '14px',
+                            width: '200px'
+                          }}
+                        />
+                      </div>
+                      <button
+                        onClick={downloadOutput}
+                        style={{
+                          backgroundColor: '#2563eb',
+                          color: 'white',
+                          padding: '8px 24px',
+                          borderRadius: '8px',
+                          fontWeight: '500',
+                          border: 'none',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          marginTop: '20px'
+                        }}
+                      >
+                        <Download style={{ width: '16px', height: '16px' }} />
+                        Download ZIP
+                      </button>
+                    </div>
                   )}
                 </div>
               )}
