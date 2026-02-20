@@ -1235,6 +1235,45 @@ const Index = () => {
             </div>
            ) : (
             <div>
+              {/* JSON file upload */}
+              <div style={{ marginBottom: '16px' }}>
+                <div
+                  style={{
+                    border: '2px dashed #cbd5e1',
+                    borderRadius: '8px',
+                    padding: '24px',
+                    textAlign: 'center',
+                    cursor: 'pointer',
+                    transition: 'all 0.3s ease'
+                  }}
+                  onClick={() => {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = '.json';
+                    input.onchange = async (e) => {
+                      const f = (e.target as HTMLInputElement).files?.[0];
+                      if (f) {
+                        const text = await f.text();
+                        setJsonInput(text);
+                      }
+                    };
+                    input.click();
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = '#3b82f6';
+                    e.currentTarget.style.backgroundColor = '#f8fafc';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = '#cbd5e1';
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                  }}
+                >
+                  <Upload style={{ width: '32px', height: '32px', color: '#9ca3af', margin: '0 auto 8px' }} />
+                  <p style={{ fontSize: '14px', fontWeight: '500' }}>Upload a JSON file or paste below</p>
+                  <p style={{ fontSize: '12px', color: '#6b7280' }}>Click to browse for a .json file</p>
+                </div>
+              </div>
+
               {/* JSON Input with Syntax Highlighting */}
               <div style={{ position: 'relative', border: '1px solid #d1d5db', borderRadius: '8px', overflow: 'hidden', backgroundColor: '#1f2937' }}>
                 <div style={{ display: 'flex', minHeight: '200px' }}>
