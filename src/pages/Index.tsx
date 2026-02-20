@@ -1195,6 +1195,22 @@ const Index = () => {
                   >
                     {isAnalyzing ? '🔍 Analyzing CSV...' : isProcessing ? '⏳ Processing...' : (preAnalysis && preAnalysis.issues.length > 0) ? '⛔ Fix Issues Before Converting' : 'Convert to JSON'}
                   </button>
+                  {preAnalysis && preAnalysis.issues.length > 0 && !isProcessing && !isAnalyzing && (
+                    <button 
+                      onClick={processFile} 
+                      style={{ 
+                        backgroundColor: '#b45309', 
+                        color: 'white', 
+                        padding: '8px 24px', 
+                        borderRadius: '8px', 
+                        fontWeight: '500', 
+                        border: '2px solid #f59e0b',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      ⚠️ Convert Anyway
+                    </button>
+                  )}
                   {result && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
