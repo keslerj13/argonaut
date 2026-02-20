@@ -319,8 +319,14 @@ const Index = () => {
 
   const renderHighlightedJSON = (json: string) => {
     if (!json) return null;
-    
+
+    // For large inputs, skip syntax highlighting to avoid stack overflow
+    const MAX_HIGHLIGHT_LINES = 500;
     const lines = json.split('\n');
+    if (lines.length > MAX_HIGHLIGHT_LINES) {
+      return <span style={{ color: '#f9fafb' }}>{json}</span>;
+    }
+    
     return lines.map((line, lineIndex) => {
       const parts: JSX.Element[] = [];
       let remaining = line;
