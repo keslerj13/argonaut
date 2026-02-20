@@ -1274,6 +1274,27 @@ const Index = () => {
                 </div>
               </div>
 
+              {/* Convert button - always visible */}
+              {jsonInput.trim() && (
+                <div style={{ marginBottom: '12px', display: 'flex', justifyContent: 'center', position: 'sticky', top: '0', zIndex: 10, backgroundColor: 'white', padding: '8px 0' }}>
+                  <button 
+                    onClick={processFile} 
+                    disabled={isProcessing}
+                    style={{ 
+                      backgroundColor: isProcessing ? '#9ca3af' : '#059669', 
+                      color: 'white', 
+                      padding: '8px 24px', 
+                      borderRadius: '8px', 
+                      fontWeight: '500', 
+                      border: 'none',
+                      cursor: isProcessing ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    {isProcessing ? 'Processing...' : 'Convert to CSV'}
+                  </button>
+                </div>
+              )}
+
               {/* JSON Input with Syntax Highlighting */}
               <div style={{ position: 'relative', border: '1px solid #d1d5db', borderRadius: '8px', overflow: 'hidden', backgroundColor: '#1f2937' }}>
                 <div style={{ display: 'flex', minHeight: '200px' }}>
@@ -1366,25 +1387,6 @@ const Index = () => {
                 </div>
               </div>
               
-              {jsonInput.trim() && (
-                <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'center' }}>
-                  <button 
-                    onClick={processFile} 
-                    disabled={isProcessing}
-                    style={{ 
-                      backgroundColor: isProcessing ? '#9ca3af' : '#059669', 
-                      color: 'white', 
-                      padding: '8px 24px', 
-                      borderRadius: '8px', 
-                      fontWeight: '500', 
-                      border: 'none',
-                      cursor: isProcessing ? 'not-allowed' : 'pointer'
-                    }}
-                  >
-                    {isProcessing ? 'Processing...' : 'Convert to CSV'}
-                  </button>
-                </div>
-              )}
             </div>
           )}
         </div>
