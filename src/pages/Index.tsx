@@ -410,6 +410,16 @@ const Index = () => {
     const trimmedValue = value.trim();
     const lowerDataType = dataType ? dataType.toLowerCase() : '';
 
+    // Handle JSON objects (values in curly braces)
+    if (trimmedValue.startsWith('{') && trimmedValue.endsWith('}')) {
+      try {
+        const jsonValue = JSON.parse(trimmedValue);
+        return unit && unit.trim() !== '' ? { value: jsonValue, unit: unit.trim() } : jsonValue;
+      } catch {
+        // Not valid JSON, treat as string
+      }
+    }
+
     // Handle arrays (values in brackets)
     if (trimmedValue.startsWith('[') && trimmedValue.endsWith(']')) {
       try {
