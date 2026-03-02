@@ -665,6 +665,21 @@ const Index = () => {
     return String(value);
   };
 
+  const deepMerge = (target: any, source: any): any => {
+    const result = { ...target };
+    for (const key of Object.keys(source)) {
+      if (
+        result[key] && typeof result[key] === 'object' && !Array.isArray(result[key]) &&
+        source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])
+      ) {
+        result[key] = deepMerge(result[key], source[key]);
+      } else {
+        result[key] = source[key];
+      }
+    }
+    return result;
+  };
+
   const processFile = async () => {
     if (mode === 'json-to-csv') {
       processJsonToCSV();
@@ -856,7 +871,15 @@ const Index = () => {
           
           // Handle direct properties (no nesting)
           if (nestingPath.length === 0) {
-            current[propertyName] = convertedValue;
+            // If both existing and new values are plain objects, merge them
+            if (
+              convertedValue && typeof convertedValue === 'object' && !Array.isArray(convertedValue) &&
+              current[propertyName] && typeof current[propertyName] === 'object' && !Array.isArray(current[propertyName])
+            ) {
+              current[propertyName] = deepMerge(current[propertyName], convertedValue);
+            } else {
+              current[propertyName] = convertedValue;
+            }
           } else {
             // Navigate through nested structure
             for (let j = 0; j < nestingPath.length; j++) {
