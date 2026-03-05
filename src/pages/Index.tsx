@@ -754,12 +754,23 @@ const Index = () => {
         allDataCols.push(colIndex);
       }
 
-      // Get labels for the kept columns from the last header row before data
-      const lastHeaderRow = headerRows[headerRows.length - 1];
+      // Derive proper header labels for kept columns using the same nesting path logic
       const keptColIndices = allDataCols.slice(0, n);
       const attrColIndices = allDataCols.slice(n);
 
-      const keptHeaders = keptColIndices.map(ci => lastHeaderRow?.[ci]?.trim() || `col_${ci}`);
+      const keptHeaders = keptColIndices.map(colIndex => {
+        const nestingPath: string[] = [];
+        for (let headerRowIndex = 0; headerRowIndex < headerRows.length; headerRowIndex++) {
+          if (headerRowIndex === requirementClassRow || headerRowIndex === dataTypeRow) continue;
+          const headerValue = headerRows[headerRowIndex][colIndex];
+          if (!headerValue || headerValue.trim() === '') continue;
+          const trimmedValue = headerValue.trim();
+          if (trimmedValue.match(/nested_object_\d+/i)) continue;
+          nestingPath.push(trimmedValue);
+        }
+        // Return full dot-joined path as the header label
+        return nestingPath.length > 0 ? nestingPath.join('.') : `col_${colIndex}`;
+      });
 
       // Build summary CSV header
       const summaryRows: string[][] = [];
