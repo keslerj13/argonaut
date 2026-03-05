@@ -21,6 +21,7 @@ const Index = () => {
   const [mode, setMode] = useState<'csv-to-json' | 'json-to-csv' | 'csv-to-summary-csv'>('csv-to-json');
   const [jsonInput, setJsonInput] = useState<string>('');
   const [exportDirName, setExportDirName] = useState<string>('');
+  const [keepColumnsCount, setKeepColumnsCount] = useState<number>(6);
   const [preAnalysis, setPreAnalysis] = useState<{
     issues: string[];
     structure: {
@@ -699,156 +700,39 @@ const Index = () => {
       });
 
       const rows = parsed.data as string[][];
-      
-      // Reuse header detection logic
-      let declaredNameCol = -1;
-      let dataStartRow = -1;
-      let dataTypeRow = -1;
-      let requirementClassRow = -1;
-      
-      for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
-        const row = rows[rowIndex];
-        for (let colIndex = 0; colIndex < row.length; colIndex++) {
-          if (row[colIndex] && row[colIndex].trim() === 'declared_name') {
-            declaredNameCol = colIndex;
-          }
-        }
-        const firstCell = row[0]?.toLowerCase().trim() || '';
-        if (firstCell.includes('requirement') && firstCell.includes('class')) {
-          requirementClassRow = rowIndex;
-        }
-        if (firstCell.includes('data') && firstCell.includes('type')) {
-          dataTypeRow = rowIndex;
-        }
-        const hasHeaderPattern = row.some(cell => 
-          cell && (
-            cell.toLowerCase().includes('requirement') ||
-            cell.toLowerCase().includes('data_type') ||
-            cell.toLowerCase().includes('object') ||
-            cell.toLowerCase().includes('nested_object') ||
-            cell.toLowerCase().includes('declared_name')
-          )
-        );
-        if (!hasHeaderPattern && dataStartRow === -1 && rowIndex > 2) {
-          dataStartRow = rowIndex;
-          break;
-        }
-      }
-
-      if (declaredNameCol === -1) {
-        setError('Could not find declared_name column in CSV headers.');
+      if (rows.length < 2) {
+        setError('CSV has no data rows.');
         return;
       }
-      if (dataStartRow === -1) dataStartRow = 7;
 
-      const headerRows = rows.slice(0, dataStartRow);
-      const dataRows = rows.slice(dataStartRow);
+      const headerRow = rows[0];
+      const n = keepColumnsCount;
+      const keptHeaders = headerRow.slice(0, n);
+      const attrHeaders = headerRow.slice(n);
 
-      // The 6 key columns to extract separately
-      const keyFields = ['_guid', '_type', '_subtype', '_variant', '_supplier', '_manufacturer'];
-      
-      // Build column metadata: for each column, determine its full nested property path
-      const colPaths: { colIndex: number; path: string[]; propertyName: string; dataType: string }[] = [];
-      
-      for (let colIndex = 0; colIndex < (headerRows[0]?.length || 0); colIndex++) {
-        if (colIndex === declaredNameCol) continue;
-        
-        let dataType = 'string';
-        if (dataTypeRow !== -1 && dataTypeRow < headerRows.length) {
-          const typeValue = headerRows[dataTypeRow][colIndex];
-          if (typeValue && typeValue.trim()) dataType = typeValue.trim().toLowerCase();
-        }
-        
-        const nestingPath: string[] = [];
-        for (let headerRowIndex = 0; headerRowIndex < headerRows.length; headerRowIndex++) {
-          if (headerRowIndex === requirementClassRow || headerRowIndex === dataTypeRow) continue;
-          const headerValue = headerRows[headerRowIndex][colIndex];
-          if (!headerValue || headerValue.trim() === '') continue;
-          const trimmedValue = headerValue.trim();
-          if (trimmedValue.match(/nested_object_\d+/i)) continue;
-          nestingPath.push(trimmedValue);
-        }
-        
-        if (nestingPath.length === 0) continue;
-        const propertyName = nestingPath.pop()!;
-        colPaths.push({ colIndex, path: nestingPath, propertyName, dataType });
-      }
-
-      // Build summary CSV rows
       const summaryRows: string[][] = [];
-      summaryRows.push(['guid', 'type', 'subtype', 'variant', 'supplier', 'manufacturer', 'attributes']);
+      summaryRows.push([...keptHeaders, 'attributes']);
 
-      for (const dataRow of dataRows) {
-        const declaredNameValue = dataRow[declaredNameCol];
-        if (!declaredNameValue || declaredNameValue.trim() === '') continue;
-
-        // First pass: build the full record to extract key fields and remaining attributes
-        const record: any = { declared_name: declaredNameValue };
-        
-        for (const col of colPaths) {
-          const value = dataRow[col.colIndex];
-          if (!value || value.trim() === '') continue;
-          
-          const convertedValue = convertValue(value, col.dataType, '');
-          
-          let current = record;
-          if (col.path.length === 0) {
-            if (
-              convertedValue && typeof convertedValue === 'object' && !Array.isArray(convertedValue) &&
-              current[col.propertyName] && typeof current[col.propertyName] === 'object' && !Array.isArray(current[col.propertyName])
-            ) {
-              current[col.propertyName] = deepMerge(current[col.propertyName], convertedValue);
-            } else {
-              current[col.propertyName] = convertedValue;
-            }
-          } else {
-            for (let j = 0; j < col.path.length; j++) {
-              const pathPart = col.path[j];
-              if (j === col.path.length - 1) {
-                if (!current[pathPart] || typeof current[pathPart] !== 'object' || Array.isArray(current[pathPart])) {
-                  current[pathPart] = {};
-                }
-                current[pathPart][col.propertyName] = convertedValue;
-              } else {
-                if (!current[pathPart] || typeof current[pathPart] !== 'object' || Array.isArray(current[pathPart])) {
-                  current[pathPart] = {};
-                }
-                current = current[pathPart];
-              }
-            }
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        const keptValues = row.slice(0, n).map(v => v ?? '');
+        const attrValues = row.slice(n);
+        const attrs: Record<string, any> = {};
+        for (let j = 0; j < attrHeaders.length; j++) {
+          const key = attrHeaders[j]?.trim();
+          const val = attrValues[j]?.trim();
+          if (key && val && val !== '') {
+            attrs[key] = val;
           }
         }
-
-        // Extract the 6 key fields
-        const guid = record._guid || '';
-        const type = record._type || '';
-        const subtype = record._subtype || '';
-        const variant = record._variant || '';
-        const supplier = record._supplier || '';
-        const manufacturer = record._manufacturer || '';
-
-        // Build attributes object (everything except key fields and declared_name)
-        const attributes: any = { ...record };
-        delete attributes._guid;
-        delete attributes._type;
-        delete attributes._subtype;
-        delete attributes._variant;
-        delete attributes._supplier;
-        delete attributes._manufacturer;
-        delete attributes.declared_name;
-
-        const attributesJson = JSON.stringify(attributes);
-        summaryRows.push([
-          String(guid), String(type), String(subtype), String(variant),
-          String(supplier), String(manufacturer), attributesJson
-        ]);
+        summaryRows.push([...keptValues, JSON.stringify(attrs)]);
       }
 
       const csvOutput = Papa.unparse(summaryRows);
       
       setResult({
         jsonOutput: csvOutput,
-        fieldCount: 7,
+        fieldCount: n + 1,
         nestedFields: [],
         dataTypes: ['summary-csv']
       });
@@ -1322,6 +1206,20 @@ const Index = () => {
             >
               CSV → Summary CSV
             </button>
+            {mode === 'csv-to-summary-csv' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '12px' }}>
+                <label style={{ fontSize: '13px', color: '#64748b', whiteSpace: 'nowrap' }}>Keep first</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={keepColumnsCount}
+                  onChange={(e) => setKeepColumnsCount(Math.max(1, parseInt(e.target.value) || 1))}
+                  style={{ width: '56px', padding: '4px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px', textAlign: 'center' }}
+                />
+                <label style={{ fontSize: '13px', color: '#64748b', whiteSpace: 'nowrap' }}>columns</label>
+              </div>
+            )}
             <button
               onClick={() => { setMode('json-to-csv'); setError(''); setResult(null); }}
               style={{
