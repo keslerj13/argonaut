@@ -700,36 +700,140 @@ const Index = () => {
       });
 
       const rows = parsed.data as string[][];
-      if (rows.length < 2) {
-        setError('CSV has no data rows.');
-        return;
+
+      // Reuse the same header detection logic as the main converter
+      let declaredNameCol = -1;
+      let dataStartRow = -1;
+      let dataTypeRow = -1;
+      let requirementClassRow = -1;
+
+      for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+        const row = rows[rowIndex];
+        for (let colIndex = 0; colIndex < row.length; colIndex++) {
+          if (row[colIndex] && row[colIndex].trim() === 'declared_name') {
+            declaredNameCol = colIndex;
+          }
+        }
+        const firstCell = row[0]?.toLowerCase().trim() || '';
+        if (firstCell.includes('requirement') && firstCell.includes('class')) {
+          requirementClassRow = rowIndex;
+        }
+        if (firstCell.includes('data') && firstCell.includes('type')) {
+          dataTypeRow = rowIndex;
+        }
+        const hasHeaderPattern = row.some(cell =>
+          cell && (
+            cell.toLowerCase().includes('requirement') ||
+            cell.toLowerCase().includes('data_type') ||
+            cell.toLowerCase().includes('object') ||
+            cell.toLowerCase().includes('nested_object') ||
+            cell.toLowerCase().includes('declared_name')
+          )
+        );
+        if (!hasHeaderPattern && dataStartRow === -1 && rowIndex > 2) {
+          dataStartRow = rowIndex;
+          break;
+        }
       }
 
-      const headerRow = rows[0];
-      const n = keepColumnsCount;
-      const keptHeaders = headerRow.slice(0, n);
-      const attrHeaders = headerRow.slice(n);
+      if (declaredNameCol === -1) {
+        setError('Could not find declared_name column in CSV headers.');
+        return;
+      }
+      if (dataStartRow === -1) dataStartRow = 7;
 
+      const headerRows = rows.slice(0, dataStartRow);
+      const dataRows = rows.slice(dataStartRow);
+      const n = keepColumnsCount;
+
+      // Determine which columns are "kept" vs "attribute" columns
+      // We keep the first n data columns (by their position), and JSONize the rest
+      // Build column metadata for attribute columns only (those beyond the first n)
+      const allDataCols: number[] = [];
+      for (let colIndex = 0; colIndex < (headerRows[0]?.length || 0); colIndex++) {
+        allDataCols.push(colIndex);
+      }
+
+      // Get labels for the kept columns from the last header row before data
+      const lastHeaderRow = headerRows[headerRows.length - 1];
+      const keptColIndices = allDataCols.slice(0, n);
+      const attrColIndices = allDataCols.slice(n);
+
+      const keptHeaders = keptColIndices.map(ci => lastHeaderRow?.[ci]?.trim() || `col_${ci}`);
+
+      // Build summary CSV header
       const summaryRows: string[][] = [];
       summaryRows.push([...keptHeaders, 'attributes']);
 
-      for (let i = 1; i < rows.length; i++) {
-        const row = rows[i];
-        const keptValues = row.slice(0, n).map(v => v ?? '');
-        const attrValues = row.slice(n);
-        const attrs: Record<string, any> = {};
-        for (let j = 0; j < attrHeaders.length; j++) {
-          const key = attrHeaders[j]?.trim();
-          const val = attrValues[j]?.trim();
-          if (key && val && val !== '') {
-            attrs[key] = val;
+      // Process each data row
+      for (const dataRow of dataRows) {
+        // Skip empty rows
+        const hasContent = dataRow.some(cell => cell && cell.trim() !== '');
+        if (!hasContent) continue;
+
+        // Keep first n columns as-is
+        const keptValues = keptColIndices.map(ci => dataRow[ci] ?? '');
+
+        // Build nested JSON object from remaining columns using header rows
+        const record: any = {};
+
+        for (const colIndex of attrColIndices) {
+          const value = dataRow[colIndex];
+          if (!value || value.trim() === '') continue;
+
+          let dataType = 'string';
+          if (dataTypeRow !== -1 && dataTypeRow < headerRows.length) {
+            const typeValue = headerRows[dataTypeRow][colIndex];
+            if (typeValue && typeValue.trim()) dataType = typeValue.trim().toLowerCase();
+          }
+
+          const nestingPath: string[] = [];
+          for (let headerRowIndex = 0; headerRowIndex < headerRows.length; headerRowIndex++) {
+            if (headerRowIndex === requirementClassRow || headerRowIndex === dataTypeRow) continue;
+            const headerValue = headerRows[headerRowIndex][colIndex];
+            if (!headerValue || headerValue.trim() === '') continue;
+            const trimmedValue = headerValue.trim();
+            if (trimmedValue.match(/nested_object_\d+/i)) continue;
+            nestingPath.push(trimmedValue);
+          }
+
+          if (nestingPath.length === 0) continue;
+          const propertyName = nestingPath.pop()!;
+          const convertedValue = convertValue(value, dataType, '');
+
+          let current = record;
+          if (nestingPath.length === 0) {
+            if (
+              convertedValue && typeof convertedValue === 'object' && !Array.isArray(convertedValue) &&
+              current[propertyName] && typeof current[propertyName] === 'object' && !Array.isArray(current[propertyName])
+            ) {
+              current[propertyName] = deepMerge(current[propertyName], convertedValue);
+            } else {
+              current[propertyName] = convertedValue;
+            }
+          } else {
+            for (let j = 0; j < nestingPath.length; j++) {
+              const pathPart = nestingPath[j];
+              if (j === nestingPath.length - 1) {
+                if (!current[pathPart] || typeof current[pathPart] !== 'object' || Array.isArray(current[pathPart])) {
+                  current[pathPart] = {};
+                }
+                current[pathPart][propertyName] = convertedValue;
+              } else {
+                if (!current[pathPart] || typeof current[pathPart] !== 'object' || Array.isArray(current[pathPart])) {
+                  current[pathPart] = {};
+                }
+                current = current[pathPart];
+              }
+            }
           }
         }
-        summaryRows.push([...keptValues, JSON.stringify(attrs)]);
+
+        summaryRows.push([...keptValues, JSON.stringify(record)]);
       }
 
       const csvOutput = Papa.unparse(summaryRows);
-      
+
       setResult({
         jsonOutput: csvOutput,
         fieldCount: n + 1,
