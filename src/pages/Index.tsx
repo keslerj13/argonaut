@@ -754,27 +754,18 @@ const Index = () => {
         allDataCols.push(colIndex);
       }
 
-      // Derive proper header labels for kept columns using the same nesting path logic
       const keptColIndices = allDataCols.slice(0, n);
       const attrColIndices = allDataCols.slice(n);
 
-      const keptHeaders = keptColIndices.map(colIndex => {
-        const nestingPath: string[] = [];
-        for (let headerRowIndex = 0; headerRowIndex < headerRows.length; headerRowIndex++) {
-          if (headerRowIndex === requirementClassRow || headerRowIndex === dataTypeRow) continue;
-          const headerValue = headerRows[headerRowIndex][colIndex];
-          if (!headerValue || headerValue.trim() === '') continue;
-          const trimmedValue = headerValue.trim();
-          if (trimmedValue.match(/nested_object_\d+/i)) continue;
-          nestingPath.push(trimmedValue);
-        }
-        // Return full dot-joined path as the header label
-        return nestingPath.length > 0 ? nestingPath.join('.') : `col_${colIndex}`;
-      });
-
-      // Build summary CSV header
+      // Build summary CSV: preserve ALL original header rows for the kept columns, 
+      // and add 'attributes' label only on the last header row
       const summaryRows: string[][] = [];
-      summaryRows.push([...keptHeaders, 'attributes']);
+      for (let hr = 0; hr < headerRows.length; hr++) {
+        const row = keptColIndices.map(ci => headerRows[hr][ci] ?? '');
+        // Add 'attributes' column label on the last header row only
+        row.push(hr === headerRows.length - 1 ? 'attributes' : '');
+        summaryRows.push(row);
+      }
 
       // Process each data row
       for (const dataRow of dataRows) {
