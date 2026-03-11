@@ -465,8 +465,8 @@ const Index = () => {
       convertedValue = trimmedValue;
     } else {
       // Try to auto-detect numeric values
-      const num = parseFloat(trimmedValue);
-      convertedValue = isNaN(num) ? trimmedValue : num;
+      const num = parseLocalizedNumber(trimmedValue);
+      convertedValue = (num === 0 && trimmedValue !== '0' && !trimmedValue.match(/^0(\.0+)?$/)) ? trimmedValue : num;
     }
 
     // If there's a unit, create an object with value and unit
