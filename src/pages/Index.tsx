@@ -1054,25 +1054,8 @@ const Index = () => {
       let skippedCount = 0;
       let exportedCount = 0;
       
-      // Helper to find _guid anywhere in a nested record
-      const findGuid = (obj: any): string | undefined => {
-        if (!obj || typeof obj !== 'object') return undefined;
-        for (const key of Object.keys(obj)) {
-          if (key.toLowerCase() === '_guid' || key.toLowerCase() === '_guids') {
-            const val = obj[key];
-            if (val && typeof val === 'string') return val;
-            if (val && typeof val === 'object' && val.value && typeof val.value === 'string') return val.value;
-          }
-          if (typeof obj[key] === 'object' && !Array.isArray(obj[key])) {
-            const found = findGuid(obj[key]);
-            if (found) return found;
-          }
-        }
-        return undefined;
-      };
-
       for (const record of jsonArray) {
-        const guid = findGuid(record);
+        const guid = record._guid;
         
         // Validate GUID exists
         if (!guid || typeof guid !== 'string') {
