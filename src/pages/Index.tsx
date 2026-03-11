@@ -35,6 +35,66 @@ const Index = () => {
     };
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const isHeaderStructureRow = (row: string[]) => {
+    const firstCell = row[0]?.trim().toLowerCase() || '';
+
+    if (
+      firstCell === 'object' ||
+      firstCell.startsWith('nested_object_') ||
+      firstCell === 'requirement class' ||
+      firstCell === 'requirement_class' ||
+      firstCell === 'data type' ||
+      firstCell === 'data_type'
+    ) {
+      return true;
+    }
+
+    return row.some(cell => cell?.trim().toLowerCase() === 'declared_name');
+  };
+
+  const detectCsvStructure = (rows: string[][]) => {
+    let declaredNameCol = -1;
+    let dataTypeRow = -1;
+    let requirementClassRow = -1;
+    let dataStartRow = -1;
+    let lastHeaderRow = -1;
+
+    const scanLimit = Math.min(rows.length, 20);
+
+    for (let rowIndex = 0; rowIndex < scanLimit; rowIndex++) {
+      const row = rows[rowIndex];
+
+      for (let colIndex = 0; colIndex < row.length; colIndex++) {
+        if (row[colIndex]?.trim().toLowerCase() === 'declared_name') {
+          declaredNameCol = colIndex;
+        }
+      }
+
+      const firstCell = row[0]?.trim().toLowerCase() || '';
+      if (firstCell === 'requirement class' || firstCell === 'requirement_class') {
+        requirementClassRow = rowIndex;
+      }
+      if (firstCell === 'data type' || firstCell === 'data_type') {
+        dataTypeRow = rowIndex;
+      }
+      if (isHeaderStructureRow(row)) {
+        lastHeaderRow = rowIndex;
+      }
+    }
+
+    if (lastHeaderRow !== -1) {
+      for (let rowIndex = lastHeaderRow + 1; rowIndex < rows.length; rowIndex++) {
+        const hasData = rows[rowIndex].some(cell => cell && cell.trim() !== '');
+        if (hasData) {
+          dataStartRow = rowIndex;
+          break;
+        }
+      }
+    }
+
+    return { declaredNameCol, dataTypeRow, requirementClassRow, dataStartRow };
+  };
   
   const analyzeFile = async (selectedFile: File) => {
     console.log('🔍 Starting file analysis...');
@@ -55,76 +115,9 @@ const Index = () => {
       
       console.log(`📊 CSV has ${rows.length} total rows`);
       
-      // Find declared_name
-      let declaredNameCol = -1;
-      let dataTypeRow = -1;
-      let dataStartRow = -1;
-      
-      for (let rowIndex = 0; rowIndex < Math.min(rows.length, 20); rowIndex++) {
-        const row = rows[rowIndex];
-        for (let colIndex = 0; colIndex < row.length; colIndex++) {
-          if (row[colIndex] && row[colIndex].trim() === 'declared_name') {
-            declaredNameCol = colIndex;
-            console.log(`✓ Found declared_name at column ${colIndex}`);
-            break;
-          }
-        }
-        const firstCell = row[0]?.toLowerCase().trim() || '';
-        if (firstCell === 'data type' || firstCell === 'data_type') {
-          dataTypeRow = rowIndex;
-          console.log(`✓ Found data type row at ${rowIndex}`);
-        }
-      }
-      
-      // Find data start
-      for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
-        const row = rows[rowIndex];
-        const hasHeaderPattern = row.some(cell => {
-          if (!cell) return false;
-          const lower = cell.toLowerCase().trim();
-          return (
-            lower === 'declared_name' ||
-            lower === 'requirement class' ||
-            lower === 'data type' ||
-            lower === 'data_type' ||
-            lower.startsWith('nested_object_') ||
-            (lower === 'object' && row[0] === cell)
-          );
-        });
-        
-        if (!hasHeaderPattern && rowIndex > 2) {
-          const hasData = row.some(cell => cell && cell.trim() !== '');
-          if (hasData) {
-            dataStartRow = rowIndex;
-            console.log(`✓ Data starts at row ${rowIndex}`);
-            break;
-          }
-        }
-      }
-      
-      // Auto-detect if not found
-      if (dataStartRow === -1 && declaredNameCol !== -1) {
-        let headerLikeRows = 0;
-        for (let i = 0; i < Math.min(rows.length, 15); i++) {
-          const hasPattern = rows[i].some(cell => {
-            if (!cell) return false;
-            const lower = cell.toLowerCase().trim();
-            return (
-              lower === 'declared_name' ||
-              lower === 'requirement class' ||
-              lower === 'data type' ||
-              lower === 'data_type' ||
-              lower.startsWith('nested_object_') ||
-              lower === 'object'
-            );
-          });
-          if (hasPattern) headerLikeRows = i + 1;
-        }
-        if (headerLikeRows > 0 && headerLikeRows < rows.length) {
-          dataStartRow = headerLikeRows;
-          console.log(`✓ Auto-detected data start at row ${dataStartRow}`);
-        }
-      }
+      const { declaredNameCol, dataTypeRow, dataStartRow } = detectCsvStructure(rows);
+
+      console.log('Detected structure:', { declaredNameCol, dataTypeRow, dataStartRow });
       
       // NEW: Check for missing data types in specific columns
       if (dataTypeRow !== -1) {
@@ -701,46 +694,16 @@ const Index = () => {
 
       const rows = parsed.data as string[][];
 
-      // Reuse the same header detection logic as the main converter
-      let declaredNameCol = -1;
-      let dataStartRow = -1;
-      let dataTypeRow = -1;
-      let requirementClassRow = -1;
-
-      for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
-        const row = rows[rowIndex];
-        for (let colIndex = 0; colIndex < row.length; colIndex++) {
-          if (row[colIndex] && row[colIndex].trim() === 'declared_name') {
-            declaredNameCol = colIndex;
-          }
-        }
-        const firstCell = row[0]?.toLowerCase().trim() || '';
-        if (firstCell.includes('requirement') && firstCell.includes('class')) {
-          requirementClassRow = rowIndex;
-        }
-        if (firstCell.includes('data') && firstCell.includes('type')) {
-          dataTypeRow = rowIndex;
-        }
-        const hasHeaderPattern = row.some(cell =>
-          cell && (
-            cell.toLowerCase().includes('requirement') ||
-            cell.toLowerCase().includes('data_type') ||
-            cell.toLowerCase().includes('object') ||
-            cell.toLowerCase().includes('nested_object') ||
-            cell.toLowerCase().includes('declared_name')
-          )
-        );
-        if (!hasHeaderPattern && dataStartRow === -1 && rowIndex > 2) {
-          dataStartRow = rowIndex;
-          break;
-        }
-      }
+      const { declaredNameCol, dataStartRow, dataTypeRow, requirementClassRow } = detectCsvStructure(rows);
 
       if (declaredNameCol === -1) {
         setError('Could not find declared_name column in CSV headers.');
         return;
       }
-      if (dataStartRow === -1) dataStartRow = 7;
+      if (dataStartRow === -1) {
+        setError('Could not determine where data rows begin in the CSV.');
+        return;
+      }
 
       const headerRows = rows.slice(0, dataStartRow);
       const dataRows = rows.slice(dataStartRow);
@@ -892,58 +855,7 @@ const Index = () => {
       }
 
       // Dynamically detect header structure
-      let declaredNameCol = -1;
-      let dataStartRow = -1;
-      let dataTypeRow = -1;
-      let requirementClassRow = -1;
-      
-      console.log('Detecting header structure from CSV rows:', rows.slice(0, 8));
-      
-      // Find declared_name column and identify important rows
-      for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
-        const row = rows[rowIndex];
-        console.log(`Row ${rowIndex}:`, row.slice(0, 10));
-        
-        for (let colIndex = 0; colIndex < row.length; colIndex++) {
-          const cell = row[colIndex];
-          console.log(`  Cell [${rowIndex}][${colIndex}]: "${cell}"`);
-          if (cell && cell.trim() === 'declared_name') {
-            declaredNameCol = colIndex;
-            console.log(`*** FOUND declared_name at row ${rowIndex}, col ${colIndex} ***`);
-          }
-        }
-        
-        // Identify special rows
-        const firstCell = row[0]?.toLowerCase().trim() || '';
-        if (firstCell.includes('requirement') && firstCell.includes('class')) {
-          requirementClassRow = rowIndex;
-          console.log('Found requirement class row:', rowIndex);
-        }
-        if (firstCell.includes('data') && firstCell.includes('type')) {
-          dataTypeRow = rowIndex;
-          console.log('Found data type row:', rowIndex);
-        }
-        
-        // Find where data rows start (after all header rows)
-        const hasHeaderPattern = row.some(cell => 
-          cell && (
-            cell.toLowerCase().includes('requirement') ||
-            cell.toLowerCase().includes('data_type') ||
-            cell.toLowerCase().includes('object') ||
-            cell.toLowerCase().includes('nested_object') ||
-            cell.toLowerCase().includes('declared_name')
-          )
-        );
-        
-        console.log(`Row ${rowIndex} hasHeaderPattern: ${hasHeaderPattern}`);
-        
-        // Only set dataStartRow if we've processed at least a few header rows
-        if (!hasHeaderPattern && dataStartRow === -1 && rowIndex > 2) {
-          dataStartRow = rowIndex;
-          console.log('Data rows start at row:', rowIndex);
-          break;
-        }
-      }
+      const { declaredNameCol, dataStartRow, dataTypeRow, requirementClassRow } = detectCsvStructure(rows);
       
       console.log('Detection results:', { declaredNameCol, dataStartRow, dataTypeRow, requirementClassRow });
       
@@ -954,9 +866,8 @@ const Index = () => {
       }
       
       if (dataStartRow === -1) {
-        // If we can't auto-detect, assume data starts after 7 header rows (based on your image)
-        dataStartRow = 7;
-        console.log('Could not auto-detect data start, assuming row 7');
+        setError('Could not determine where data rows begin. Please ensure the CSV keeps the header rows intact.');
+        return;
       }
       
       // Extract header rows dynamically
@@ -1143,25 +1054,8 @@ const Index = () => {
       let skippedCount = 0;
       let exportedCount = 0;
       
-      // Helper to find _guid anywhere in a nested record
-      const findGuid = (obj: any): string | undefined => {
-        if (!obj || typeof obj !== 'object') return undefined;
-        for (const key of Object.keys(obj)) {
-          if (key.toLowerCase() === '_guid' || key.toLowerCase() === '_guids') {
-            const val = obj[key];
-            if (val && typeof val === 'string') return val;
-            if (val && typeof val === 'object' && val.value && typeof val.value === 'string') return val.value;
-          }
-          if (typeof obj[key] === 'object' && !Array.isArray(obj[key])) {
-            const found = findGuid(obj[key]);
-            if (found) return found;
-          }
-        }
-        return undefined;
-      };
-
       for (const record of jsonArray) {
-        const guid = findGuid(record);
+        const guid = record._guid;
         
         // Validate GUID exists
         if (!guid || typeof guid !== 'string') {
