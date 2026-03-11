@@ -694,46 +694,16 @@ const Index = () => {
 
       const rows = parsed.data as string[][];
 
-      // Reuse the same header detection logic as the main converter
-      let declaredNameCol = -1;
-      let dataStartRow = -1;
-      let dataTypeRow = -1;
-      let requirementClassRow = -1;
-
-      for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
-        const row = rows[rowIndex];
-        for (let colIndex = 0; colIndex < row.length; colIndex++) {
-          if (row[colIndex] && row[colIndex].trim() === 'declared_name') {
-            declaredNameCol = colIndex;
-          }
-        }
-        const firstCell = row[0]?.toLowerCase().trim() || '';
-        if (firstCell.includes('requirement') && firstCell.includes('class')) {
-          requirementClassRow = rowIndex;
-        }
-        if (firstCell.includes('data') && firstCell.includes('type')) {
-          dataTypeRow = rowIndex;
-        }
-        const hasHeaderPattern = row.some(cell =>
-          cell && (
-            cell.toLowerCase().includes('requirement') ||
-            cell.toLowerCase().includes('data_type') ||
-            cell.toLowerCase().includes('object') ||
-            cell.toLowerCase().includes('nested_object') ||
-            cell.toLowerCase().includes('declared_name')
-          )
-        );
-        if (!hasHeaderPattern && dataStartRow === -1 && rowIndex > 2) {
-          dataStartRow = rowIndex;
-          break;
-        }
-      }
+      const { declaredNameCol, dataStartRow, dataTypeRow, requirementClassRow } = detectCsvStructure(rows);
 
       if (declaredNameCol === -1) {
         setError('Could not find declared_name column in CSV headers.');
         return;
       }
-      if (dataStartRow === -1) dataStartRow = 7;
+      if (dataStartRow === -1) {
+        setError('Could not determine where data rows begin in the CSV.');
+        return;
+      }
 
       const headerRows = rows.slice(0, dataStartRow);
       const dataRows = rows.slice(dataStartRow);
