@@ -1144,7 +1144,9 @@ const Index = () => {
       let exportedCount = 0;
       
       for (const record of jsonArray) {
-        const guid = record._guid;
+        // Flexibly find _guid or _guids key (case-insensitive)
+        const guidKey = Object.keys(record).find(k => k.toLowerCase() === '_guid' || k.toLowerCase() === '_guids');
+        const guid = guidKey ? record[guidKey] : undefined;
         
         // Validate GUID exists
         if (!guid || typeof guid !== 'string') {
