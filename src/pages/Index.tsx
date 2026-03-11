@@ -35,6 +35,66 @@ const Index = () => {
     };
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const isHeaderStructureRow = (row: string[]) => {
+    const firstCell = row[0]?.trim().toLowerCase() || '';
+
+    if (
+      firstCell === 'object' ||
+      firstCell.startsWith('nested_object_') ||
+      firstCell === 'requirement class' ||
+      firstCell === 'requirement_class' ||
+      firstCell === 'data type' ||
+      firstCell === 'data_type'
+    ) {
+      return true;
+    }
+
+    return row.some(cell => cell?.trim().toLowerCase() === 'declared_name');
+  };
+
+  const detectCsvStructure = (rows: string[][]) => {
+    let declaredNameCol = -1;
+    let dataTypeRow = -1;
+    let requirementClassRow = -1;
+    let dataStartRow = -1;
+    let lastHeaderRow = -1;
+
+    const scanLimit = Math.min(rows.length, 20);
+
+    for (let rowIndex = 0; rowIndex < scanLimit; rowIndex++) {
+      const row = rows[rowIndex];
+
+      for (let colIndex = 0; colIndex < row.length; colIndex++) {
+        if (row[colIndex]?.trim().toLowerCase() === 'declared_name') {
+          declaredNameCol = colIndex;
+        }
+      }
+
+      const firstCell = row[0]?.trim().toLowerCase() || '';
+      if (firstCell === 'requirement class' || firstCell === 'requirement_class') {
+        requirementClassRow = rowIndex;
+      }
+      if (firstCell === 'data type' || firstCell === 'data_type') {
+        dataTypeRow = rowIndex;
+      }
+      if (isHeaderStructureRow(row)) {
+        lastHeaderRow = rowIndex;
+      }
+    }
+
+    if (lastHeaderRow !== -1) {
+      for (let rowIndex = lastHeaderRow + 1; rowIndex < rows.length; rowIndex++) {
+        const hasData = rows[rowIndex].some(cell => cell && cell.trim() !== '');
+        if (hasData) {
+          dataStartRow = rowIndex;
+          break;
+        }
+      }
+    }
+
+    return { declaredNameCol, dataTypeRow, requirementClassRow, dataStartRow };
+  };
   
   const analyzeFile = async (selectedFile: File) => {
     console.log('🔍 Starting file analysis...');
