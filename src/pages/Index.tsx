@@ -431,8 +431,8 @@ const Index = () => {
     // Convert based on data type
     let convertedValue;
     if (lowerDataType.includes('real') || lowerDataType.includes('int')) {
-      const num = parseFloat(trimmedValue);
-      convertedValue = isNaN(num) ? trimmedValue : num;
+      const num = parseLocalizedNumber(trimmedValue);
+      convertedValue = num === 0 && trimmedValue !== '0' && !trimmedValue.match(/^0(\.0+)?$/) ? trimmedValue : num;
     } else if (lowerDataType.includes('string')) {
       convertedValue = trimmedValue;
     } else {
