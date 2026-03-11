@@ -398,6 +398,34 @@ const Index = () => {
     });
   };
 
+  const parseLocalizedNumber = (value: string): number => {
+    if (!value || value === '') return 0;
+    let str = String(value).trim();
+    str = str.replace(/[¤$€£¥\s]/g, '');
+    const lastComma = str.lastIndexOf(',');
+    const lastDot = str.lastIndexOf('.');
+    // If comma comes after dot, comma is decimal separator (e.g., "1.234,56")
+    // If dot comes after comma, dot is decimal separator (e.g., "1,234.56")
+    // If only commas exist and digits after last comma are exactly 3, it's a thousands separator
+    if (lastComma > lastDot) {
+      // Check if comma is thousands separator (exactly 3 digits after it, no dot present)
+      const afterComma = str.substring(lastComma + 1);
+      if (lastDot === -1 && afterComma.length === 3 && /^\d{3}$/.test(afterComma)) {
+        // Comma is thousands separator (e.g., "1,169")
+        str = str.replace(/,/g, '');
+      } else {
+        // Comma is decimal separator (e.g., "1.234,56")
+        str = str.replace(/\./g, '');
+        str = str.replace(',', '.');
+      }
+    } else {
+      // Dot as decimal: remove commas as thousands separators
+      str = str.replace(/,/g, '');
+    }
+    const parsed = parseFloat(str);
+    return isNaN(parsed) ? 0 : parsed;
+  };
+
   const convertValue = (value: string, dataType: string, unit: string) => {
     if (!value || value.trim() === '') return null;
 
