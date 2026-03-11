@@ -115,76 +115,9 @@ const Index = () => {
       
       console.log(`📊 CSV has ${rows.length} total rows`);
       
-      // Find declared_name
-      let declaredNameCol = -1;
-      let dataTypeRow = -1;
-      let dataStartRow = -1;
-      
-      for (let rowIndex = 0; rowIndex < Math.min(rows.length, 20); rowIndex++) {
-        const row = rows[rowIndex];
-        for (let colIndex = 0; colIndex < row.length; colIndex++) {
-          if (row[colIndex] && row[colIndex].trim() === 'declared_name') {
-            declaredNameCol = colIndex;
-            console.log(`✓ Found declared_name at column ${colIndex}`);
-            break;
-          }
-        }
-        const firstCell = row[0]?.toLowerCase().trim() || '';
-        if (firstCell === 'data type' || firstCell === 'data_type') {
-          dataTypeRow = rowIndex;
-          console.log(`✓ Found data type row at ${rowIndex}`);
-        }
-      }
-      
-      // Find data start
-      for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
-        const row = rows[rowIndex];
-        const hasHeaderPattern = row.some(cell => {
-          if (!cell) return false;
-          const lower = cell.toLowerCase().trim();
-          return (
-            lower === 'declared_name' ||
-            lower === 'requirement class' ||
-            lower === 'data type' ||
-            lower === 'data_type' ||
-            lower.startsWith('nested_object_') ||
-            (lower === 'object' && row[0] === cell)
-          );
-        });
-        
-        if (!hasHeaderPattern && rowIndex > 2) {
-          const hasData = row.some(cell => cell && cell.trim() !== '');
-          if (hasData) {
-            dataStartRow = rowIndex;
-            console.log(`✓ Data starts at row ${rowIndex}`);
-            break;
-          }
-        }
-      }
-      
-      // Auto-detect if not found
-      if (dataStartRow === -1 && declaredNameCol !== -1) {
-        let headerLikeRows = 0;
-        for (let i = 0; i < Math.min(rows.length, 15); i++) {
-          const hasPattern = rows[i].some(cell => {
-            if (!cell) return false;
-            const lower = cell.toLowerCase().trim();
-            return (
-              lower === 'declared_name' ||
-              lower === 'requirement class' ||
-              lower === 'data type' ||
-              lower === 'data_type' ||
-              lower.startsWith('nested_object_') ||
-              lower === 'object'
-            );
-          });
-          if (hasPattern) headerLikeRows = i + 1;
-        }
-        if (headerLikeRows > 0 && headerLikeRows < rows.length) {
-          dataStartRow = headerLikeRows;
-          console.log(`✓ Auto-detected data start at row ${dataStartRow}`);
-        }
-      }
+      const { declaredNameCol, dataTypeRow, dataStartRow } = detectCsvStructure(rows);
+
+      console.log('Detected structure:', { declaredNameCol, dataTypeRow, dataStartRow });
       
       // NEW: Check for missing data types in specific columns
       if (dataTypeRow !== -1) {
