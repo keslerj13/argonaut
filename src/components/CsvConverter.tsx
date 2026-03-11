@@ -44,6 +44,27 @@ const CsvConverter = () => {
   const [expandedWarnings, setExpandedWarnings] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const parseLocalizedNumber = (value: string): number => {
+    if (!value || value === '') return 0;
+    let str = String(value).trim();
+    str = str.replace(/[¤$€£¥\s]/g, '');
+    const lastComma = str.lastIndexOf(',');
+    const lastDot = str.lastIndexOf('.');
+    if (lastComma > lastDot) {
+      const afterComma = str.substring(lastComma + 1);
+      if (lastDot === -1 && afterComma.length === 3 && /^\d{3}$/.test(afterComma)) {
+        str = str.replace(/,/g, '');
+      } else {
+        str = str.replace(/\./g, '');
+        str = str.replace(',', '.');
+      }
+    } else {
+      str = str.replace(/,/g, '');
+    }
+    const parsed = parseFloat(str);
+    return isNaN(parsed) ? 0 : parsed;
+  };
+
   const convertValue = (value: string, dataType: string, unit: string) => {
     if (!value || value.trim() === '') return null;
 
@@ -53,12 +74,10 @@ const CsvConverter = () => {
     // Handle arrays (values in brackets)
     if (trimmedValue.startsWith('[') && trimmedValue.endsWith(']')) {
       try {
-        // First try to parse as valid JSON
         const arrayValue = JSON.parse(trimmedValue);
         return unit && unit.trim() !== '' ? { value: arrayValue, unit: unit.trim() } : arrayValue;
       } catch {
-        // If JSON parse fails, try to parse as comma-separated values
-        const innerContent = trimmedValue.slice(1, -1); // Remove brackets
+        const innerContent = trimmedValue.slice(1, -1);
         const items = innerContent.split(',').map(item => item.trim());
         return unit && unit.trim() !== '' ? { value: items, unit: unit.trim() } : items;
       }
@@ -67,14 +86,14 @@ const CsvConverter = () => {
     // Convert based on data type
     let convertedValue;
     if (lowerDataType.includes('real') || lowerDataType.includes('int')) {
-      const num = parseFloat(trimmedValue);
-      convertedValue = isNaN(num) ? trimmedValue : num;
+      const num = parseLocalizedNumber(trimmedValue);
+      convertedValue = (num === 0 && trimmedValue !== '0' && !trimmedValue.match(/^0(\.0+)?$/)) ? trimmedValue : num;
     } else if (lowerDataType.includes('string')) {
       convertedValue = trimmedValue;
     } else {
       // Try to auto-detect numeric values
-      const num = parseFloat(trimmedValue);
-      convertedValue = isNaN(num) ? trimmedValue : num;
+      const num = parseLocalizedNumber(trimmedValue);
+      convertedValue = (num === 0 && trimmedValue !== '0' && !trimmedValue.match(/^0(\.0+)?$/)) ? trimmedValue : num;
     }
 
     // If there's a unit, create an object with value and unit
