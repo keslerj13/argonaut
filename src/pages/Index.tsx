@@ -855,58 +855,7 @@ const Index = () => {
       }
 
       // Dynamically detect header structure
-      let declaredNameCol = -1;
-      let dataStartRow = -1;
-      let dataTypeRow = -1;
-      let requirementClassRow = -1;
-      
-      console.log('Detecting header structure from CSV rows:', rows.slice(0, 8));
-      
-      // Find declared_name column and identify important rows
-      for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
-        const row = rows[rowIndex];
-        console.log(`Row ${rowIndex}:`, row.slice(0, 10));
-        
-        for (let colIndex = 0; colIndex < row.length; colIndex++) {
-          const cell = row[colIndex];
-          console.log(`  Cell [${rowIndex}][${colIndex}]: "${cell}"`);
-          if (cell && cell.trim() === 'declared_name') {
-            declaredNameCol = colIndex;
-            console.log(`*** FOUND declared_name at row ${rowIndex}, col ${colIndex} ***`);
-          }
-        }
-        
-        // Identify special rows
-        const firstCell = row[0]?.toLowerCase().trim() || '';
-        if (firstCell.includes('requirement') && firstCell.includes('class')) {
-          requirementClassRow = rowIndex;
-          console.log('Found requirement class row:', rowIndex);
-        }
-        if (firstCell.includes('data') && firstCell.includes('type')) {
-          dataTypeRow = rowIndex;
-          console.log('Found data type row:', rowIndex);
-        }
-        
-        // Find where data rows start (after all header rows)
-        const hasHeaderPattern = row.some(cell => 
-          cell && (
-            cell.toLowerCase().includes('requirement') ||
-            cell.toLowerCase().includes('data_type') ||
-            cell.toLowerCase().includes('object') ||
-            cell.toLowerCase().includes('nested_object') ||
-            cell.toLowerCase().includes('declared_name')
-          )
-        );
-        
-        console.log(`Row ${rowIndex} hasHeaderPattern: ${hasHeaderPattern}`);
-        
-        // Only set dataStartRow if we've processed at least a few header rows
-        if (!hasHeaderPattern && dataStartRow === -1 && rowIndex > 2) {
-          dataStartRow = rowIndex;
-          console.log('Data rows start at row:', rowIndex);
-          break;
-        }
-      }
+      const { declaredNameCol, dataStartRow, dataTypeRow, requirementClassRow } = detectCsvStructure(rows);
       
       console.log('Detection results:', { declaredNameCol, dataStartRow, dataTypeRow, requirementClassRow });
       
@@ -917,9 +866,8 @@ const Index = () => {
       }
       
       if (dataStartRow === -1) {
-        // If we can't auto-detect, assume data starts after 7 header rows (based on your image)
-        dataStartRow = 7;
-        console.log('Could not auto-detect data start, assuming row 7');
+        setError('Could not determine where data rows begin. Please ensure the CSV keeps the header rows intact.');
+        return;
       }
       
       // Extract header rows dynamically
