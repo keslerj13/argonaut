@@ -1029,6 +1029,8 @@ const Index = () => {
         jsonArray.push(record);
       }
 
+      console.log(`✅ Conversion complete: ${jsonArray.length} records created, ${skippedEmptyName} rows skipped (empty declared_name)`);
+
       // Convert to formatted JSON string
       const jsonString = JSON.stringify(jsonArray, null, 2);
       
