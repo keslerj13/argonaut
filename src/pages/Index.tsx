@@ -901,11 +901,16 @@ const Index = () => {
       // Extract header rows dynamically
       const headerRows = rows.slice(0, dataStartRow);
       const dataRows = rows.slice(dataStartRow);
+      
+      console.log(`📊 Processing ${dataRows.length} data rows (starting from row ${dataStartRow})`);
+      console.log(`📊 declaredNameCol: ${declaredNameCol}, first data row sample:`, dataRows[0]?.slice(0, 6));
+      console.log(`📊 First data row col[${declaredNameCol}] value: "${dataRows[0]?.[declaredNameCol]}"`);
 
       // Create the final JSON array
       const jsonArray: any[] = [];
       const nestedFields: string[] = [];
       const dataTypes = new Set<string>();
+      let skippedEmptyName = 0;
 
       // Process each data row
       for (let rowIndex = 0; rowIndex < dataRows.length; rowIndex++) {
@@ -913,7 +918,13 @@ const Index = () => {
         
         // Get the declared_name for this data row
         const declaredNameValue = dataRow[declaredNameCol];
-        if (!declaredNameValue || declaredNameValue.trim() === '') continue;
+        if (!declaredNameValue || declaredNameValue.trim() === '') {
+          skippedEmptyName++;
+          if (skippedEmptyName <= 3) {
+            console.warn(`⚠️ Skipping data row ${rowIndex} - empty declared_name at col ${declaredNameCol}. Row data:`, dataRow.slice(0, 6));
+          }
+          continue;
+        }
 
         // Create a new record for this row
         const record: any = {
@@ -1017,6 +1028,8 @@ const Index = () => {
         
         jsonArray.push(record);
       }
+
+      console.log(`✅ Conversion complete: ${jsonArray.length} records created, ${skippedEmptyName} rows skipped (empty declared_name)`);
 
       // Convert to formatted JSON string
       const jsonString = JSON.stringify(jsonArray, null, 2);
