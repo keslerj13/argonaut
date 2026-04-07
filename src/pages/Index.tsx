@@ -1109,16 +1109,11 @@ const Index = () => {
         const cleanedRecord = { ...record };
         delete cleanedRecord._id;
         
-        // Get first two characters of GUID for subfolder
-        const guidPrefix = guid.substring(0, 2).toLowerCase();
-        
-        // Build the path: catalog/component/<baseFileName>/<guidPrefix>/<guid>.json
-        const filePath = `catalog/component/${baseFileName}/${guidPrefix}/${guid}.json`;
-        
         // Pretty print the JSON with 2-space indentation
         const jsonContent = JSON.stringify(cleanedRecord, null, 2);
         
-        zip.file(filePath, jsonContent);
+        // Flat structure: just <guid>.json inside the zip
+        zip.file(`${guid}.json`, jsonContent);
         exportedCount++;
       }
       
@@ -1130,11 +1125,11 @@ const Index = () => {
       // Generate ZIP file
       const zipBlob = await zip.generateAsync({ type: 'blob' });
       
-      // Download the ZIP
+      // Download the ZIP named after the user-provided name
       const url = URL.createObjectURL(zipBlob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${baseFileName}_export.zip`;
+      a.download = `${baseFileName}.zip`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
