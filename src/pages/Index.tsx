@@ -2054,7 +2054,7 @@ const Index = () => {
         )}
 
         {/* Results */}
-        {result && (
+        {result && mode !== 'csv-to-json' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             {/* Summary Stats */}
             <div style={{ backgroundColor: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)', padding: '24px' }}>
