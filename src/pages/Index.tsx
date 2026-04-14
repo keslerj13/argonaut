@@ -12,7 +12,33 @@ interface ConversionResult {
   dataTypes: string[];
 }
 
+interface FileEntry {
+  id: string;
+  file: File;
+  exportName: string;
+  result: ConversionResult | null;
+  error: string;
+  isProcessing: boolean;
+  isAnalyzing: boolean;
+  preAnalysis: {
+    issues: string[];
+    structure: {
+      totalRows: number;
+      declaredNameFound: boolean;
+      declaredNameCol: number;
+      dataTypeRowFound: boolean;
+      dataTypeRow: number;
+      dataStartRow: number;
+      estimatedDataRows: number;
+    };
+  } | null;
+}
+
 const Index = () => {
+  // Multi-file state for CSV→JSON mode
+  const [fileEntries, setFileEntries] = useState<FileEntry[]>([]);
+  
+  // Legacy single-file state for other modes
   const [file, setFile] = useState<File | null>(null);
   const [result, setResult] = useState<ConversionResult | null>(null);
   const [error, setError] = useState<string>('');
@@ -35,6 +61,15 @@ const Index = () => {
     };
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Helper to update a specific file entry
+  const updateEntry = (id: string, updates: Partial<FileEntry>) => {
+    setFileEntries(prev => prev.map(e => e.id === id ? { ...e, ...updates } : e));
+  };
+
+  const removeEntry = (id: string) => {
+    setFileEntries(prev => prev.filter(e => e.id !== id));
+  };
 
   const isHeaderStructureRow = (row: string[]) => {
     const firstCell = row[0]?.trim().toLowerCase() || '';
