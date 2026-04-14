@@ -346,7 +346,225 @@ const Index = () => {
     }
   };
 
-  const renderHighlightedJSON = (json: string) => {
+  // Analyze a file entry (for multi-file CSV→JSON mode)
+  const analyzeFileEntry = async (entryId: string, selectedFile: File) => {
+    updateEntry(entryId, { isAnalyzing: true, preAnalysis: null, error: '' });
+    
+    try {
+      const csvData = await selectedFile.text();
+      const parsed = Papa.parse(csvData, {
+        skipEmptyLines: true,
+        dynamicTyping: false,
+        delimitersToGuess: [',', '\t', '|', ';']
+      });
+      
+      const rows = parsed.data as string[][];
+      const issues: string[] = [];
+      const { declaredNameCol, dataTypeRow, dataStartRow } = detectCsvStructure(rows);
+
+      // Reuse same validation logic as analyzeFile
+      if (dataTypeRow !== -1) {
+        const dataTypeRowData = rows[dataTypeRow];
+        const missingDataTypeCols: number[] = [];
+        for (let colIndex = 1; colIndex < dataTypeRowData.length; colIndex++) {
+          if (!dataTypeRowData[colIndex] || dataTypeRowData[colIndex].trim() === '') {
+            missingDataTypeCols.push(colIndex);
+          }
+        }
+        if (missingDataTypeCols.length > 0) {
+          issues.push(`❌ CRITICAL: Missing data types in ${missingDataTypeCols.length} column(s)`);
+        }
+      }
+
+      if (declaredNameCol === -1) issues.push('❌ CRITICAL: No "declared_name" column found');
+      if (dataTypeRow === -1) issues.push('⚠️ WARNING: No "Data Type" row found');
+      if (dataStartRow === -1) issues.push('❌ CRITICAL: Cannot determine where data rows begin');
+      
+      const estimatedDataRows = dataStartRow !== -1 ? rows.length - dataStartRow : 0;
+      if (estimatedDataRows === 0) issues.push('❌ CRITICAL: No data rows detected');
+
+      updateEntry(entryId, {
+        isAnalyzing: false,
+        preAnalysis: {
+          issues,
+          structure: {
+            totalRows: rows.length,
+            declaredNameFound: declaredNameCol !== -1,
+            declaredNameCol,
+            dataTypeRowFound: dataTypeRow !== -1,
+            dataTypeRow,
+            dataStartRow,
+            estimatedDataRows
+          }
+        }
+      });
+    } catch (err) {
+      updateEntry(entryId, { isAnalyzing: false, error: 'Failed to analyze: ' + (err as Error).message });
+    }
+  };
+
+  // Process a single file entry to JSON
+  const processFileEntry = async (entryId: string) => {
+    const entry = fileEntries.find(e => e.id === entryId);
+    if (!entry) return;
+
+    updateEntry(entryId, { isProcessing: true, error: '', result: null });
+
+    try {
+      const csvData = await entry.file.text();
+      const parsed = Papa.parse(csvData, {
+        skipEmptyLines: true,
+        dynamicTyping: false,
+        delimitersToGuess: [',', '\t', '|', ';']
+      });
+
+      const rows = parsed.data as string[][];
+      const { declaredNameCol, dataStartRow, dataTypeRow, requirementClassRow } = detectCsvStructure(rows);
+
+      if (declaredNameCol === -1) { updateEntry(entryId, { isProcessing: false, error: 'No declared_name column found' }); return; }
+      if (dataStartRow === -1) { updateEntry(entryId, { isProcessing: false, error: 'Cannot determine data start' }); return; }
+
+      const headerRows = rows.slice(0, dataStartRow);
+      const dataRows = rows.slice(dataStartRow);
+      const jsonArray: any[] = [];
+      const nestedFields: string[] = [];
+      const dataTypes = new Set<string>();
+      let skippedEmptyName = 0;
+
+      for (let rowIndex = 0; rowIndex < dataRows.length; rowIndex++) {
+        const dataRow = dataRows[rowIndex];
+        const declaredNameValue = dataRow[declaredNameCol];
+        if (!declaredNameValue || declaredNameValue.trim() === '') { skippedEmptyName++; continue; }
+
+        const record: any = { declared_name: declaredNameValue };
+
+        for (let colIndex = 0; colIndex < dataRow.length; colIndex++) {
+          if (colIndex === declaredNameCol) continue;
+          const value = dataRow[colIndex];
+          if (!value || value.trim() === '') continue;
+
+          const nestingPath: string[] = [];
+          let dataType = 'string';
+
+          if (dataTypeRow !== -1 && dataTypeRow < headerRows.length) {
+            const typeValue = headerRows[dataTypeRow][colIndex];
+            if (typeValue && typeValue.trim()) { dataType = typeValue.trim().toLowerCase(); dataTypes.add(dataType); }
+          }
+
+          for (let headerRowIndex = 0; headerRowIndex < headerRows.length; headerRowIndex++) {
+            if (headerRowIndex === requirementClassRow || headerRowIndex === dataTypeRow) continue;
+            const headerValue = headerRows[headerRowIndex][colIndex];
+            if (!headerValue || headerValue.trim() === '') continue;
+            const trimmedValue = headerValue.trim();
+            if (trimmedValue.match(/nested_object_\d+/i)) continue;
+            nestingPath.push(trimmedValue);
+          }
+
+          if (nestingPath.length === 0) continue;
+          const propertyName = nestingPath.pop()!;
+
+          if (nestingPath.length > 0) {
+            const nestedFieldPath = nestingPath.join(' > ');
+            if (!nestedFields.includes(nestedFieldPath)) nestedFields.push(nestedFieldPath);
+          }
+
+          const convertedValue = convertValue(value, dataType, '');
+
+          let current = record;
+          if (nestingPath.length === 0) {
+            if (convertedValue && typeof convertedValue === 'object' && !Array.isArray(convertedValue) &&
+                current[propertyName] && typeof current[propertyName] === 'object' && !Array.isArray(current[propertyName])) {
+              current[propertyName] = deepMerge(current[propertyName], convertedValue);
+            } else {
+              current[propertyName] = convertedValue;
+            }
+          } else {
+            for (let j = 0; j < nestingPath.length; j++) {
+              const pathPart = nestingPath[j];
+              if (j === nestingPath.length - 1) {
+                if (!current[pathPart] || typeof current[pathPart] !== 'object' || Array.isArray(current[pathPart])) current[pathPart] = {};
+                current[pathPart][propertyName] = convertedValue;
+              } else {
+                if (!current[pathPart] || typeof current[pathPart] !== 'object' || Array.isArray(current[pathPart])) current[pathPart] = {};
+                current = current[pathPart];
+              }
+            }
+          }
+        }
+        jsonArray.push(record);
+      }
+
+      const jsonString = JSON.stringify(jsonArray, null, 2);
+      updateEntry(entryId, {
+        isProcessing: false,
+        result: {
+          jsonOutput: jsonString,
+          fieldCount: headerRows[0] ? headerRows[0].filter(f => f && f.trim()).length - 1 : 0,
+          nestedFields,
+          dataTypes: Array.from(dataTypes)
+        }
+      });
+    } catch (err) {
+      updateEntry(entryId, { isProcessing: false, error: 'Error: ' + (err as Error).message });
+    }
+  };
+
+  // Process all file entries
+  const processAllEntries = async () => {
+    for (const entry of fileEntries) {
+      if (!entry.result && !entry.isProcessing) {
+        await processFileEntry(entry.id);
+      }
+    }
+  };
+
+  // Download a single entry as ZIP
+  const downloadEntryZip = async (entry: FileEntry) => {
+    if (!entry.result) return;
+    try {
+      const jsonArray = JSON.parse(entry.result.jsonOutput);
+      if (!Array.isArray(jsonArray) || jsonArray.length === 0) { alert('No records to export'); return; }
+
+      const zip = new JSZip();
+      const baseFileName = entry.exportName.trim() || entry.file.name.replace(/\.[^/.]+$/, '') || 'export';
+      let exportedCount = 0;
+
+      for (const record of jsonArray) {
+        const guid = record._guid;
+        if (!guid || typeof guid !== 'string') continue;
+        const cleanedRecord = { ...record };
+        delete cleanedRecord._id;
+        const jsonContent = JSON.stringify(cleanedRecord, null, 2);
+        const prefix = guid.substring(0, 2);
+        zip.file(`${prefix}/${guid}.json`, jsonContent);
+        exportedCount++;
+      }
+
+      if (exportedCount === 0) { alert('No records with valid _guid found'); return; }
+
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(zipBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${baseFileName}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert('Failed to create ZIP: ' + (err instanceof Error ? err.message : 'Unknown error'));
+    }
+  };
+
+  // Export all entries as separate ZIPs
+  const exportAllZips = async () => {
+    const readyEntries = fileEntries.filter(e => e.result);
+    for (const entry of readyEntries) {
+      await downloadEntryZip(entry);
+    }
+  };
+
+
     if (!json) return null;
 
     // For large inputs, skip syntax highlighting to avoid stack overflow
