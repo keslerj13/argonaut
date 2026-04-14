@@ -2077,7 +2077,7 @@ const Index = () => {
                 </div>
                  <div style={{ textAlign: 'center', padding: '16px', backgroundColor: '#f8fafc', borderRadius: '8px' }}>
                    <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#dc2626' }}>
-                     {mode === 'csv-to-json' ? Object.keys(JSON.parse(result.jsonOutput)).length : result.jsonOutput.split('\n').length - 4}
+                     {result.jsonOutput.split('\n').length - 4}
                    </div>
                    <div style={{ fontSize: '14px', color: '#64748b' }}>Data Rows</div>
                  </div>
@@ -2099,7 +2099,7 @@ const Index = () => {
             <div style={{ backgroundColor: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)', padding: '24px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
                 <h2 style={{ fontSize: '20px', fontWeight: '600' }}>
-                  {mode === 'csv-to-json' ? 'Generated JSON' : 'Generated CSV'}
+                  Generated CSV
                 </h2>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <button
