@@ -12,7 +12,33 @@ interface ConversionResult {
   dataTypes: string[];
 }
 
+interface FileEntry {
+  id: string;
+  file: File;
+  exportName: string;
+  result: ConversionResult | null;
+  error: string;
+  isProcessing: boolean;
+  isAnalyzing: boolean;
+  preAnalysis: {
+    issues: string[];
+    structure: {
+      totalRows: number;
+      declaredNameFound: boolean;
+      declaredNameCol: number;
+      dataTypeRowFound: boolean;
+      dataTypeRow: number;
+      dataStartRow: number;
+      estimatedDataRows: number;
+    };
+  } | null;
+}
+
 const Index = () => {
+  // Multi-file state for CSV→JSON mode
+  const [fileEntries, setFileEntries] = useState<FileEntry[]>([]);
+  
+  // Legacy single-file state for other modes
   const [file, setFile] = useState<File | null>(null);
   const [result, setResult] = useState<ConversionResult | null>(null);
   const [error, setError] = useState<string>('');
@@ -35,6 +61,15 @@ const Index = () => {
     };
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Helper to update a specific file entry
+  const updateEntry = (id: string, updates: Partial<FileEntry>) => {
+    setFileEntries(prev => prev.map(e => e.id === id ? { ...e, ...updates } : e));
+  };
+
+  const removeEntry = (id: string) => {
+    setFileEntries(prev => prev.filter(e => e.id !== id));
+  };
 
   const isHeaderStructureRow = (row: string[]) => {
     const firstCell = row[0]?.trim().toLowerCase() || '';
@@ -308,6 +343,224 @@ const Index = () => {
       setError('Failed to analyze CSV: ' + (err as Error).message);
     } finally {
       setIsAnalyzing(false);
+    }
+  };
+
+  // Analyze a file entry (for multi-file CSV→JSON mode)
+  const analyzeFileEntry = async (entryId: string, selectedFile: File) => {
+    updateEntry(entryId, { isAnalyzing: true, preAnalysis: null, error: '' });
+    
+    try {
+      const csvData = await selectedFile.text();
+      const parsed = Papa.parse(csvData, {
+        skipEmptyLines: true,
+        dynamicTyping: false,
+        delimitersToGuess: [',', '\t', '|', ';']
+      });
+      
+      const rows = parsed.data as string[][];
+      const issues: string[] = [];
+      const { declaredNameCol, dataTypeRow, dataStartRow } = detectCsvStructure(rows);
+
+      // Reuse same validation logic as analyzeFile
+      if (dataTypeRow !== -1) {
+        const dataTypeRowData = rows[dataTypeRow];
+        const missingDataTypeCols: number[] = [];
+        for (let colIndex = 1; colIndex < dataTypeRowData.length; colIndex++) {
+          if (!dataTypeRowData[colIndex] || dataTypeRowData[colIndex].trim() === '') {
+            missingDataTypeCols.push(colIndex);
+          }
+        }
+        if (missingDataTypeCols.length > 0) {
+          issues.push(`❌ CRITICAL: Missing data types in ${missingDataTypeCols.length} column(s)`);
+        }
+      }
+
+      if (declaredNameCol === -1) issues.push('❌ CRITICAL: No "declared_name" column found');
+      if (dataTypeRow === -1) issues.push('⚠️ WARNING: No "Data Type" row found');
+      if (dataStartRow === -1) issues.push('❌ CRITICAL: Cannot determine where data rows begin');
+      
+      const estimatedDataRows = dataStartRow !== -1 ? rows.length - dataStartRow : 0;
+      if (estimatedDataRows === 0) issues.push('❌ CRITICAL: No data rows detected');
+
+      updateEntry(entryId, {
+        isAnalyzing: false,
+        preAnalysis: {
+          issues,
+          structure: {
+            totalRows: rows.length,
+            declaredNameFound: declaredNameCol !== -1,
+            declaredNameCol,
+            dataTypeRowFound: dataTypeRow !== -1,
+            dataTypeRow,
+            dataStartRow,
+            estimatedDataRows
+          }
+        }
+      });
+    } catch (err) {
+      updateEntry(entryId, { isAnalyzing: false, error: 'Failed to analyze: ' + (err as Error).message });
+    }
+  };
+
+  // Process a single file entry to JSON
+  const processFileEntry = async (entryId: string) => {
+    const entry = fileEntries.find(e => e.id === entryId);
+    if (!entry) return;
+
+    updateEntry(entryId, { isProcessing: true, error: '', result: null });
+
+    try {
+      const csvData = await entry.file.text();
+      const parsed = Papa.parse(csvData, {
+        skipEmptyLines: true,
+        dynamicTyping: false,
+        delimitersToGuess: [',', '\t', '|', ';']
+      });
+
+      const rows = parsed.data as string[][];
+      const { declaredNameCol, dataStartRow, dataTypeRow, requirementClassRow } = detectCsvStructure(rows);
+
+      if (declaredNameCol === -1) { updateEntry(entryId, { isProcessing: false, error: 'No declared_name column found' }); return; }
+      if (dataStartRow === -1) { updateEntry(entryId, { isProcessing: false, error: 'Cannot determine data start' }); return; }
+
+      const headerRows = rows.slice(0, dataStartRow);
+      const dataRows = rows.slice(dataStartRow);
+      const jsonArray: any[] = [];
+      const nestedFields: string[] = [];
+      const dataTypes = new Set<string>();
+      let skippedEmptyName = 0;
+
+      for (let rowIndex = 0; rowIndex < dataRows.length; rowIndex++) {
+        const dataRow = dataRows[rowIndex];
+        const declaredNameValue = dataRow[declaredNameCol];
+        if (!declaredNameValue || declaredNameValue.trim() === '') { skippedEmptyName++; continue; }
+
+        const record: any = { declared_name: declaredNameValue };
+
+        for (let colIndex = 0; colIndex < dataRow.length; colIndex++) {
+          if (colIndex === declaredNameCol) continue;
+          const value = dataRow[colIndex];
+          if (!value || value.trim() === '') continue;
+
+          const nestingPath: string[] = [];
+          let dataType = 'string';
+
+          if (dataTypeRow !== -1 && dataTypeRow < headerRows.length) {
+            const typeValue = headerRows[dataTypeRow][colIndex];
+            if (typeValue && typeValue.trim()) { dataType = typeValue.trim().toLowerCase(); dataTypes.add(dataType); }
+          }
+
+          for (let headerRowIndex = 0; headerRowIndex < headerRows.length; headerRowIndex++) {
+            if (headerRowIndex === requirementClassRow || headerRowIndex === dataTypeRow) continue;
+            const headerValue = headerRows[headerRowIndex][colIndex];
+            if (!headerValue || headerValue.trim() === '') continue;
+            const trimmedValue = headerValue.trim();
+            if (trimmedValue.match(/nested_object_\d+/i)) continue;
+            nestingPath.push(trimmedValue);
+          }
+
+          if (nestingPath.length === 0) continue;
+          const propertyName = nestingPath.pop()!;
+
+          if (nestingPath.length > 0) {
+            const nestedFieldPath = nestingPath.join(' > ');
+            if (!nestedFields.includes(nestedFieldPath)) nestedFields.push(nestedFieldPath);
+          }
+
+          const convertedValue = convertValue(value, dataType, '');
+
+          let current = record;
+          if (nestingPath.length === 0) {
+            if (convertedValue && typeof convertedValue === 'object' && !Array.isArray(convertedValue) &&
+                current[propertyName] && typeof current[propertyName] === 'object' && !Array.isArray(current[propertyName])) {
+              current[propertyName] = deepMerge(current[propertyName], convertedValue);
+            } else {
+              current[propertyName] = convertedValue;
+            }
+          } else {
+            for (let j = 0; j < nestingPath.length; j++) {
+              const pathPart = nestingPath[j];
+              if (j === nestingPath.length - 1) {
+                if (!current[pathPart] || typeof current[pathPart] !== 'object' || Array.isArray(current[pathPart])) current[pathPart] = {};
+                current[pathPart][propertyName] = convertedValue;
+              } else {
+                if (!current[pathPart] || typeof current[pathPart] !== 'object' || Array.isArray(current[pathPart])) current[pathPart] = {};
+                current = current[pathPart];
+              }
+            }
+          }
+        }
+        jsonArray.push(record);
+      }
+
+      const jsonString = JSON.stringify(jsonArray, null, 2);
+      updateEntry(entryId, {
+        isProcessing: false,
+        result: {
+          jsonOutput: jsonString,
+          fieldCount: headerRows[0] ? headerRows[0].filter(f => f && f.trim()).length - 1 : 0,
+          nestedFields,
+          dataTypes: Array.from(dataTypes)
+        }
+      });
+    } catch (err) {
+      updateEntry(entryId, { isProcessing: false, error: 'Error: ' + (err as Error).message });
+    }
+  };
+
+  // Process all file entries
+  const processAllEntries = async () => {
+    for (const entry of fileEntries) {
+      if (!entry.result && !entry.isProcessing) {
+        await processFileEntry(entry.id);
+      }
+    }
+  };
+
+  // Download a single entry as ZIP
+  const downloadEntryZip = async (entry: FileEntry) => {
+    if (!entry.result) return;
+    try {
+      const jsonArray = JSON.parse(entry.result.jsonOutput);
+      if (!Array.isArray(jsonArray) || jsonArray.length === 0) { alert('No records to export'); return; }
+
+      const zip = new JSZip();
+      const baseFileName = entry.exportName.trim() || entry.file.name.replace(/\.[^/.]+$/, '') || 'export';
+      let exportedCount = 0;
+
+      for (const record of jsonArray) {
+        const guid = record._guid;
+        if (!guid || typeof guid !== 'string') continue;
+        const cleanedRecord = { ...record };
+        delete cleanedRecord._id;
+        const jsonContent = JSON.stringify(cleanedRecord, null, 2);
+        const prefix = guid.substring(0, 2);
+        zip.file(`${prefix}/${guid}.json`, jsonContent);
+        exportedCount++;
+      }
+
+      if (exportedCount === 0) { alert('No records with valid _guid found'); return; }
+
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(zipBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${baseFileName}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert('Failed to create ZIP: ' + (err instanceof Error ? err.message : 'Unknown error'));
+    }
+  };
+
+  // Export all entries as separate ZIPs
+  const exportAllZips = async () => {
+    const readyEntries = fileEntries.filter(e => e.result);
+    for (const entry of readyEntries) {
+      await downloadEntryZip(entry);
     }
   };
 
@@ -1146,44 +1399,50 @@ const Index = () => {
     }
   };
 
-  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    console.log('📁 File selected event triggered');
-    const selectedFile = event.target.files?.[0];
-    if (selectedFile) {
-      console.log('📁 File:', selectedFile.name, selectedFile.size, 'bytes');
-      if (!selectedFile.name.toLowerCase().endsWith('.csv')) {
-        setError('Please select a CSV file');
-        setFile(null);
-        setResult(null);
-        setPreAnalysis(null);
-        return;
+  const addFiles = async (files: FileList | File[]) => {
+    const csvFiles = Array.from(files).filter(f => f.name.toLowerCase().endsWith('.csv'));
+    if (csvFiles.length === 0) { setError('Please select CSV file(s)'); return; }
+
+    if (mode === 'csv-to-json') {
+      const newEntries: FileEntry[] = csvFiles.map(f => ({
+        id: crypto.randomUUID(),
+        file: f,
+        exportName: f.name.replace(/\.[^/.]+$/, ''),
+        result: null,
+        error: '',
+        isProcessing: false,
+        isAnalyzing: true,
+        preAnalysis: null,
+      }));
+      setFileEntries(prev => [...prev, ...newEntries]);
+      // Analyze each in parallel
+      for (const entry of newEntries) {
+        analyzeFileEntry(entry.id, entry.file);
       }
+    } else {
+      // Legacy single-file for other modes
+      const selectedFile = csvFiles[0];
       setFile(selectedFile);
       setError('');
       setResult(null);
-      
-      // Immediately analyze the file
       await analyzeFile(selectedFile);
     }
   };
 
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (files && files.length > 0) {
+      await addFiles(files);
+    }
+    // Reset input so same file can be re-selected
+    event.target.value = '';
+  };
+
   const handleDrop = async (event: React.DragEvent) => {
     event.preventDefault();
-    console.log('📁 File dropped');
-    const droppedFile = event.dataTransfer.files[0];
-    if (droppedFile && droppedFile.name.toLowerCase().endsWith('.csv')) {
-      console.log('📁 File:', droppedFile.name, droppedFile.size, 'bytes');
-      setFile(droppedFile);
-      setError('');
-      setResult(null);
-      
-      // Immediately analyze the file
-      await analyzeFile(droppedFile);
-    } else {
-      setError('Please drop a CSV file');
-      setFile(null);
-      setResult(null);
-      setPreAnalysis(null);
+    const files = event.dataTransfer.files;
+    if (files && files.length > 0) {
+      await addFiles(files);
     }
   };
 
@@ -1291,10 +1550,190 @@ const Index = () => {
         <div style={{ backgroundColor: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)', padding: '24px' }}>
           <h2 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Upload style={{ width: '20px', height: '20px' }} />
-            {mode === 'json-to-csv' ? 'Paste JSON Data' : 'Upload CSV File'}
+            {mode === 'json-to-csv' ? 'Paste JSON Data' : mode === 'csv-to-json' ? 'Upload CSV Files' : 'Upload CSV File'}
           </h2>
 
-          {mode !== 'json-to-csv' ? (
+          {mode === 'csv-to-json' ? (
+            <div>
+              {/* Drop zone for multi-file */}
+              <div
+                style={{
+                  border: '2px dashed #cbd5e1',
+                  borderRadius: '8px',
+                  padding: '32px',
+                  textAlign: 'center',
+                  transition: 'all 0.3s ease',
+                  cursor: 'pointer'
+                }}
+                onDrop={handleDrop}
+                onDragOver={handleDragOver}
+                onClick={() => fileInputRef.current?.click()}
+                onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#3b82f6'; e.currentTarget.style.backgroundColor = '#f8fafc'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#cbd5e1'; e.currentTarget.style.backgroundColor = 'transparent'; }}
+              >
+                <Upload style={{ width: '48px', height: '48px', color: '#9ca3af', margin: '0 auto 16px' }} />
+                <p style={{ fontSize: '14px', fontWeight: '500' }}>Drop CSV files here or click to browse</p>
+                <p style={{ fontSize: '12px', color: '#6b7280' }}>You can select multiple files at once</p>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".csv"
+                  multiple
+                  onChange={handleFileSelect}
+                  style={{ display: 'none' }}
+                />
+              </div>
+
+              {/* File entries list */}
+              {fileEntries.length > 0 && (
+                <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {/* Batch action bar */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', backgroundColor: '#f1f5f9', borderRadius: '8px' }}>
+                    <span style={{ fontSize: '14px', fontWeight: '500', color: '#475569' }}>
+                      {fileEntries.length} file{fileEntries.length > 1 ? 's' : ''} imported
+                    </span>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        onClick={processAllEntries}
+                        disabled={fileEntries.every(e => e.result || e.isProcessing)}
+                        style={{
+                          backgroundColor: fileEntries.every(e => e.result || e.isProcessing) ? '#9ca3af' : '#059669',
+                          color: 'white', padding: '6px 16px', borderRadius: '6px', fontWeight: '500', border: 'none',
+                          cursor: fileEntries.every(e => e.result || e.isProcessing) ? 'not-allowed' : 'pointer',
+                          fontSize: '13px'
+                        }}
+                      >
+                        Convert All to JSON
+                      </button>
+                      {fileEntries.some(e => e.result) && (
+                        <button
+                          onClick={exportAllZips}
+                          style={{
+                            backgroundColor: '#2563eb', color: 'white', padding: '6px 16px', borderRadius: '6px',
+                            fontWeight: '500', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px'
+                          }}
+                        >
+                          <Download style={{ width: '14px', height: '14px' }} />
+                          Export All ZIPs
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setFileEntries([])}
+                        style={{
+                          backgroundColor: 'transparent', color: '#ef4444', padding: '6px 12px', borderRadius: '6px',
+                          fontWeight: '500', border: '1px solid #ef4444', cursor: 'pointer', fontSize: '13px'
+                        }}
+                      >
+                        Clear All
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Individual file rows */}
+                  {fileEntries.map((entry) => (
+                    <div key={entry.id} style={{
+                      border: `1px solid ${entry.error ? '#fca5a5' : entry.result ? '#86efac' : '#e2e8f0'}`,
+                      borderRadius: '8px', padding: '12px 16px',
+                      backgroundColor: entry.error ? '#fef2f2' : entry.result ? '#f0fdf4' : 'white'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        {/* Status icon */}
+                        <div style={{ flexShrink: 0 }}>
+                          {entry.isAnalyzing || entry.isProcessing ? (
+                            <span style={{ fontSize: '18px' }}>⏳</span>
+                          ) : entry.error ? (
+                            <AlertCircle style={{ width: '18px', height: '18px', color: '#dc2626' }} />
+                          ) : entry.result ? (
+                            <CheckCircle style={{ width: '18px', height: '18px', color: '#059669' }} />
+                          ) : entry.preAnalysis && entry.preAnalysis.issues.length > 0 ? (
+                            <AlertCircle style={{ width: '18px', height: '18px', color: '#f59e0b' }} />
+                          ) : (
+                            <FileText style={{ width: '18px', height: '18px', color: '#6b7280' }} />
+                          )}
+                        </div>
+
+                        {/* File info */}
+                        <div style={{ flex: '0 0 200px', minWidth: 0 }}>
+                          <div style={{ fontSize: '13px', fontWeight: '500', color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {entry.file.name}
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+                            {(entry.file.size / 1024).toFixed(1)} KB
+                            {entry.preAnalysis && ` • ${entry.preAnalysis.structure.estimatedDataRows} rows`}
+                          </div>
+                        </div>
+
+                        {/* Export name input */}
+                        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <label style={{ fontSize: '12px', color: '#6b7280', whiteSpace: 'nowrap' }}>ZIP name:</label>
+                          <input
+                            type="text"
+                            value={entry.exportName}
+                            onChange={(e) => updateEntry(entry.id, { exportName: e.target.value })}
+                            style={{
+                              padding: '4px 8px', border: '1px solid #d1d5db', borderRadius: '4px',
+                              fontSize: '13px', flex: 1, minWidth: '120px'
+                            }}
+                          />
+                        </div>
+
+                        {/* Action buttons */}
+                        <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                          {!entry.result && !entry.isProcessing && (
+                            <button
+                              onClick={() => processFileEntry(entry.id)}
+                              disabled={entry.isAnalyzing}
+                              style={{
+                                backgroundColor: entry.isAnalyzing ? '#9ca3af' : '#059669', color: 'white',
+                                padding: '4px 12px', borderRadius: '4px', fontSize: '12px', fontWeight: '500',
+                                border: 'none', cursor: entry.isAnalyzing ? 'not-allowed' : 'pointer'
+                              }}
+                            >
+                              Convert
+                            </button>
+                          )}
+                          {entry.result && (
+                            <button
+                              onClick={() => downloadEntryZip(entry)}
+                              style={{
+                                backgroundColor: '#2563eb', color: 'white', padding: '4px 12px', borderRadius: '4px',
+                                fontSize: '12px', fontWeight: '500', border: 'none', cursor: 'pointer',
+                                display: 'flex', alignItems: 'center', gap: '4px'
+                              }}
+                            >
+                              <Download style={{ width: '12px', height: '12px' }} />
+                              ZIP
+                            </button>
+                          )}
+                          <button
+                            onClick={() => removeEntry(entry.id)}
+                            style={{
+                              backgroundColor: 'transparent', color: '#94a3b8', padding: '4px 8px', borderRadius: '4px',
+                              fontSize: '16px', border: 'none', cursor: 'pointer', lineHeight: 1
+                            }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Error display */}
+                      {entry.error && (
+                        <div style={{ marginTop: '8px', fontSize: '12px', color: '#dc2626' }}>{entry.error}</div>
+                      )}
+
+                      {/* Analysis warnings */}
+                      {entry.preAnalysis && entry.preAnalysis.issues.length > 0 && !entry.result && (
+                        <div style={{ marginTop: '8px', fontSize: '12px', color: '#b45309' }}>
+                          ⚠️ {entry.preAnalysis.issues.length} issue(s) detected
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : mode !== 'json-to-csv' ? (
             <div>
               <div
                 style={{
@@ -1308,29 +1747,19 @@ const Index = () => {
                 onDrop={handleDrop}
                 onDragOver={handleDragOver}
                 onClick={() => fileInputRef.current?.click()}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = '#3b82f6';
-                  e.currentTarget.style.backgroundColor = '#f8fafc';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = '#cbd5e1';
-                  e.currentTarget.style.backgroundColor = 'transparent';
-                }}
+                onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#3b82f6'; e.currentTarget.style.backgroundColor = '#f8fafc'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#cbd5e1'; e.currentTarget.style.backgroundColor = 'transparent'; }}
               >
                 <Upload style={{ width: '48px', height: '48px', color: '#9ca3af', margin: '0 auto 16px' }} />
                 {file ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <p style={{ fontSize: '14px', fontWeight: '500', color: '#059669' }}>{file.name}</p>
-                    <p style={{ fontSize: '12px', color: '#6b7280' }}>
-                      {(file.size / 1024).toFixed(1)} KB
-                    </p>
+                    <p style={{ fontSize: '12px', color: '#6b7280' }}>{(file.size / 1024).toFixed(1)} KB</p>
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <p style={{ fontSize: '14px', fontWeight: '500' }}>Drop your CSV file here or click to browse</p>
-                    <p style={{ fontSize: '12px', color: '#6b7280' }}>
-                      Format: 4 header rows (field+type, data type, unit, field name) + multiple data rows
-                    </p>
+                    <p style={{ fontSize: '12px', color: '#6b7280' }}>Format: 4 header rows + multiple data rows</p>
                   </div>
                 )}
                 <input
@@ -1349,92 +1778,21 @@ const Index = () => {
                     disabled={isProcessing || isAnalyzing || (preAnalysis && preAnalysis.issues.length > 0)}
                     style={{ 
                       backgroundColor: (isProcessing || isAnalyzing || (preAnalysis && preAnalysis.issues.length > 0)) ? '#9ca3af' : '#059669', 
-                      color: 'white', 
-                      padding: '8px 24px', 
-                      borderRadius: '8px', 
-                      fontWeight: '500', 
-                      border: 'none',
+                      color: 'white', padding: '8px 24px', borderRadius: '8px', fontWeight: '500', border: 'none',
                       cursor: (isProcessing || isAnalyzing || (preAnalysis && preAnalysis.issues.length > 0)) ? 'not-allowed' : 'pointer',
                       opacity: (isProcessing || isAnalyzing || (preAnalysis && preAnalysis.issues.length > 0)) ? 0.6 : 1
                     }}
                   >
-                    {isAnalyzing ? '🔍 Analyzing CSV...' : isProcessing ? '⏳ Processing...' : (preAnalysis && preAnalysis.issues.length > 0) ? '⛔ Fix Issues Before Converting' : mode === 'csv-to-summary-csv' ? 'Convert to Summary CSV' : 'Convert to JSON'}
+                    {isAnalyzing ? '🔍 Analyzing CSV...' : isProcessing ? '⏳ Processing...' : (preAnalysis && preAnalysis.issues.length > 0) ? '⛔ Fix Issues Before Converting' : 'Convert to Summary CSV'}
                   </button>
                   {preAnalysis && preAnalysis.issues.length > 0 && !isProcessing && !isAnalyzing && (
-                    <button 
-                      onClick={processFile} 
-                      style={{ 
-                        backgroundColor: '#b45309', 
-                        color: 'white', 
-                        padding: '8px 24px', 
-                        borderRadius: '8px', 
-                        fontWeight: '500', 
-                        border: '2px solid #f59e0b',
-                        cursor: 'pointer',
-                      }}
-                    >
+                    <button onClick={processFile} style={{ backgroundColor: '#b45309', color: 'white', padding: '8px 24px', borderRadius: '8px', fontWeight: '500', border: '2px solid #f59e0b', cursor: 'pointer' }}>
                       ⚠️ Convert Anyway
                     </button>
                   )}
-                  {result && mode === 'csv-to-json' && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <label style={{ fontSize: '12px', color: '#6b7280', fontWeight: '500' }}>
-                          Export Directory Name
-                        </label>
-                        <input
-                          type="text"
-                          value={exportDirName}
-                          onChange={(e) => setExportDirName(e.target.value)}
-                          placeholder={file?.name.replace(/\.[^/.]+$/, '') || 'export'}
-                          style={{
-                            padding: '8px 12px',
-                            border: '1px solid #d1d5db',
-                            borderRadius: '6px',
-                            fontSize: '14px',
-                            width: '200px'
-                          }}
-                        />
-                      </div>
-                      <button
-                        onClick={downloadOutput}
-                        style={{
-                          backgroundColor: '#2563eb',
-                          color: 'white',
-                          padding: '8px 24px',
-                          borderRadius: '8px',
-                          fontWeight: '500',
-                          border: 'none',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '8px',
-                          marginTop: '20px'
-                        }}
-                      >
-                        <Download style={{ width: '16px', height: '16px' }} />
-                        Download ZIP
-                      </button>
-                    </div>
-                  )}
                   {result && mode === 'csv-to-summary-csv' && (
-                    <button
-                      onClick={downloadOutput}
-                      style={{
-                        backgroundColor: '#2563eb',
-                        color: 'white',
-                        padding: '8px 24px',
-                        borderRadius: '8px',
-                        fontWeight: '500',
-                        border: 'none',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px'
-                      }}
-                    >
-                      <Download style={{ width: '16px', height: '16px' }} />
-                      Download Summary CSV
+                    <button onClick={downloadOutput} style={{ backgroundColor: '#2563eb', color: 'white', padding: '8px 24px', borderRadius: '8px', fontWeight: '500', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Download style={{ width: '16px', height: '16px' }} /> Download Summary CSV
                     </button>
                   )}
                 </div>
@@ -1696,7 +2054,7 @@ const Index = () => {
         )}
 
         {/* Results */}
-        {result && (
+        {result && mode !== 'csv-to-json' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             {/* Summary Stats */}
             <div style={{ backgroundColor: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)', padding: '24px' }}>
@@ -1719,7 +2077,7 @@ const Index = () => {
                 </div>
                  <div style={{ textAlign: 'center', padding: '16px', backgroundColor: '#f8fafc', borderRadius: '8px' }}>
                    <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#dc2626' }}>
-                     {mode === 'csv-to-json' ? Object.keys(JSON.parse(result.jsonOutput)).length : result.jsonOutput.split('\n').length - 4}
+                     {result.jsonOutput.split('\n').length - 4}
                    </div>
                    <div style={{ fontSize: '14px', color: '#64748b' }}>Data Rows</div>
                  </div>
@@ -1741,7 +2099,7 @@ const Index = () => {
             <div style={{ backgroundColor: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)', padding: '24px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
                 <h2 style={{ fontSize: '20px', fontWeight: '600' }}>
-                  {mode === 'csv-to-json' ? 'Generated JSON' : 'Generated CSV'}
+                  Generated CSV
                 </h2>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <button
