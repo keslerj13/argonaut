@@ -1550,10 +1550,190 @@ const Index = () => {
         <div style={{ backgroundColor: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)', padding: '24px' }}>
           <h2 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Upload style={{ width: '20px', height: '20px' }} />
-            {mode === 'json-to-csv' ? 'Paste JSON Data' : 'Upload CSV File'}
+            {mode === 'json-to-csv' ? 'Paste JSON Data' : mode === 'csv-to-json' ? 'Upload CSV Files' : 'Upload CSV File'}
           </h2>
 
-          {mode !== 'json-to-csv' ? (
+          {mode === 'csv-to-json' ? (
+            <div>
+              {/* Drop zone for multi-file */}
+              <div
+                style={{
+                  border: '2px dashed #cbd5e1',
+                  borderRadius: '8px',
+                  padding: '32px',
+                  textAlign: 'center',
+                  transition: 'all 0.3s ease',
+                  cursor: 'pointer'
+                }}
+                onDrop={handleDrop}
+                onDragOver={handleDragOver}
+                onClick={() => fileInputRef.current?.click()}
+                onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#3b82f6'; e.currentTarget.style.backgroundColor = '#f8fafc'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#cbd5e1'; e.currentTarget.style.backgroundColor = 'transparent'; }}
+              >
+                <Upload style={{ width: '48px', height: '48px', color: '#9ca3af', margin: '0 auto 16px' }} />
+                <p style={{ fontSize: '14px', fontWeight: '500' }}>Drop CSV files here or click to browse</p>
+                <p style={{ fontSize: '12px', color: '#6b7280' }}>You can select multiple files at once</p>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".csv"
+                  multiple
+                  onChange={handleFileSelect}
+                  style={{ display: 'none' }}
+                />
+              </div>
+
+              {/* File entries list */}
+              {fileEntries.length > 0 && (
+                <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {/* Batch action bar */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', backgroundColor: '#f1f5f9', borderRadius: '8px' }}>
+                    <span style={{ fontSize: '14px', fontWeight: '500', color: '#475569' }}>
+                      {fileEntries.length} file{fileEntries.length > 1 ? 's' : ''} imported
+                    </span>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        onClick={processAllEntries}
+                        disabled={fileEntries.every(e => e.result || e.isProcessing)}
+                        style={{
+                          backgroundColor: fileEntries.every(e => e.result || e.isProcessing) ? '#9ca3af' : '#059669',
+                          color: 'white', padding: '6px 16px', borderRadius: '6px', fontWeight: '500', border: 'none',
+                          cursor: fileEntries.every(e => e.result || e.isProcessing) ? 'not-allowed' : 'pointer',
+                          fontSize: '13px'
+                        }}
+                      >
+                        Convert All to JSON
+                      </button>
+                      {fileEntries.some(e => e.result) && (
+                        <button
+                          onClick={exportAllZips}
+                          style={{
+                            backgroundColor: '#2563eb', color: 'white', padding: '6px 16px', borderRadius: '6px',
+                            fontWeight: '500', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px'
+                          }}
+                        >
+                          <Download style={{ width: '14px', height: '14px' }} />
+                          Export All ZIPs
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setFileEntries([])}
+                        style={{
+                          backgroundColor: 'transparent', color: '#ef4444', padding: '6px 12px', borderRadius: '6px',
+                          fontWeight: '500', border: '1px solid #ef4444', cursor: 'pointer', fontSize: '13px'
+                        }}
+                      >
+                        Clear All
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Individual file rows */}
+                  {fileEntries.map((entry) => (
+                    <div key={entry.id} style={{
+                      border: `1px solid ${entry.error ? '#fca5a5' : entry.result ? '#86efac' : '#e2e8f0'}`,
+                      borderRadius: '8px', padding: '12px 16px',
+                      backgroundColor: entry.error ? '#fef2f2' : entry.result ? '#f0fdf4' : 'white'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        {/* Status icon */}
+                        <div style={{ flexShrink: 0 }}>
+                          {entry.isAnalyzing || entry.isProcessing ? (
+                            <span style={{ fontSize: '18px' }}>⏳</span>
+                          ) : entry.error ? (
+                            <AlertCircle style={{ width: '18px', height: '18px', color: '#dc2626' }} />
+                          ) : entry.result ? (
+                            <CheckCircle style={{ width: '18px', height: '18px', color: '#059669' }} />
+                          ) : entry.preAnalysis && entry.preAnalysis.issues.length > 0 ? (
+                            <AlertCircle style={{ width: '18px', height: '18px', color: '#f59e0b' }} />
+                          ) : (
+                            <FileText style={{ width: '18px', height: '18px', color: '#6b7280' }} />
+                          )}
+                        </div>
+
+                        {/* File info */}
+                        <div style={{ flex: '0 0 200px', minWidth: 0 }}>
+                          <div style={{ fontSize: '13px', fontWeight: '500', color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {entry.file.name}
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+                            {(entry.file.size / 1024).toFixed(1)} KB
+                            {entry.preAnalysis && ` • ${entry.preAnalysis.structure.estimatedDataRows} rows`}
+                          </div>
+                        </div>
+
+                        {/* Export name input */}
+                        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <label style={{ fontSize: '12px', color: '#6b7280', whiteSpace: 'nowrap' }}>ZIP name:</label>
+                          <input
+                            type="text"
+                            value={entry.exportName}
+                            onChange={(e) => updateEntry(entry.id, { exportName: e.target.value })}
+                            style={{
+                              padding: '4px 8px', border: '1px solid #d1d5db', borderRadius: '4px',
+                              fontSize: '13px', flex: 1, minWidth: '120px'
+                            }}
+                          />
+                        </div>
+
+                        {/* Action buttons */}
+                        <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                          {!entry.result && !entry.isProcessing && (
+                            <button
+                              onClick={() => processFileEntry(entry.id)}
+                              disabled={entry.isAnalyzing}
+                              style={{
+                                backgroundColor: entry.isAnalyzing ? '#9ca3af' : '#059669', color: 'white',
+                                padding: '4px 12px', borderRadius: '4px', fontSize: '12px', fontWeight: '500',
+                                border: 'none', cursor: entry.isAnalyzing ? 'not-allowed' : 'pointer'
+                              }}
+                            >
+                              Convert
+                            </button>
+                          )}
+                          {entry.result && (
+                            <button
+                              onClick={() => downloadEntryZip(entry)}
+                              style={{
+                                backgroundColor: '#2563eb', color: 'white', padding: '4px 12px', borderRadius: '4px',
+                                fontSize: '12px', fontWeight: '500', border: 'none', cursor: 'pointer',
+                                display: 'flex', alignItems: 'center', gap: '4px'
+                              }}
+                            >
+                              <Download style={{ width: '12px', height: '12px' }} />
+                              ZIP
+                            </button>
+                          )}
+                          <button
+                            onClick={() => removeEntry(entry.id)}
+                            style={{
+                              backgroundColor: 'transparent', color: '#94a3b8', padding: '4px 8px', borderRadius: '4px',
+                              fontSize: '16px', border: 'none', cursor: 'pointer', lineHeight: 1
+                            }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Error display */}
+                      {entry.error && (
+                        <div style={{ marginTop: '8px', fontSize: '12px', color: '#dc2626' }}>{entry.error}</div>
+                      )}
+
+                      {/* Analysis warnings */}
+                      {entry.preAnalysis && entry.preAnalysis.issues.length > 0 && !entry.result && (
+                        <div style={{ marginTop: '8px', fontSize: '12px', color: '#b45309' }}>
+                          ⚠️ {entry.preAnalysis.issues.length} issue(s) detected
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : mode !== 'json-to-csv' ? (
             <div>
               <div
                 style={{
@@ -1567,29 +1747,19 @@ const Index = () => {
                 onDrop={handleDrop}
                 onDragOver={handleDragOver}
                 onClick={() => fileInputRef.current?.click()}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = '#3b82f6';
-                  e.currentTarget.style.backgroundColor = '#f8fafc';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = '#cbd5e1';
-                  e.currentTarget.style.backgroundColor = 'transparent';
-                }}
+                onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#3b82f6'; e.currentTarget.style.backgroundColor = '#f8fafc'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#cbd5e1'; e.currentTarget.style.backgroundColor = 'transparent'; }}
               >
                 <Upload style={{ width: '48px', height: '48px', color: '#9ca3af', margin: '0 auto 16px' }} />
                 {file ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <p style={{ fontSize: '14px', fontWeight: '500', color: '#059669' }}>{file.name}</p>
-                    <p style={{ fontSize: '12px', color: '#6b7280' }}>
-                      {(file.size / 1024).toFixed(1)} KB
-                    </p>
+                    <p style={{ fontSize: '12px', color: '#6b7280' }}>{(file.size / 1024).toFixed(1)} KB</p>
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <p style={{ fontSize: '14px', fontWeight: '500' }}>Drop your CSV file here or click to browse</p>
-                    <p style={{ fontSize: '12px', color: '#6b7280' }}>
-                      Format: 4 header rows (field+type, data type, unit, field name) + multiple data rows
-                    </p>
+                    <p style={{ fontSize: '12px', color: '#6b7280' }}>Format: 4 header rows + multiple data rows</p>
                   </div>
                 )}
                 <input
@@ -1608,92 +1778,21 @@ const Index = () => {
                     disabled={isProcessing || isAnalyzing || (preAnalysis && preAnalysis.issues.length > 0)}
                     style={{ 
                       backgroundColor: (isProcessing || isAnalyzing || (preAnalysis && preAnalysis.issues.length > 0)) ? '#9ca3af' : '#059669', 
-                      color: 'white', 
-                      padding: '8px 24px', 
-                      borderRadius: '8px', 
-                      fontWeight: '500', 
-                      border: 'none',
+                      color: 'white', padding: '8px 24px', borderRadius: '8px', fontWeight: '500', border: 'none',
                       cursor: (isProcessing || isAnalyzing || (preAnalysis && preAnalysis.issues.length > 0)) ? 'not-allowed' : 'pointer',
                       opacity: (isProcessing || isAnalyzing || (preAnalysis && preAnalysis.issues.length > 0)) ? 0.6 : 1
                     }}
                   >
-                    {isAnalyzing ? '🔍 Analyzing CSV...' : isProcessing ? '⏳ Processing...' : (preAnalysis && preAnalysis.issues.length > 0) ? '⛔ Fix Issues Before Converting' : mode === 'csv-to-summary-csv' ? 'Convert to Summary CSV' : 'Convert to JSON'}
+                    {isAnalyzing ? '🔍 Analyzing CSV...' : isProcessing ? '⏳ Processing...' : (preAnalysis && preAnalysis.issues.length > 0) ? '⛔ Fix Issues Before Converting' : 'Convert to Summary CSV'}
                   </button>
                   {preAnalysis && preAnalysis.issues.length > 0 && !isProcessing && !isAnalyzing && (
-                    <button 
-                      onClick={processFile} 
-                      style={{ 
-                        backgroundColor: '#b45309', 
-                        color: 'white', 
-                        padding: '8px 24px', 
-                        borderRadius: '8px', 
-                        fontWeight: '500', 
-                        border: '2px solid #f59e0b',
-                        cursor: 'pointer',
-                      }}
-                    >
+                    <button onClick={processFile} style={{ backgroundColor: '#b45309', color: 'white', padding: '8px 24px', borderRadius: '8px', fontWeight: '500', border: '2px solid #f59e0b', cursor: 'pointer' }}>
                       ⚠️ Convert Anyway
                     </button>
                   )}
-                  {result && mode === 'csv-to-json' && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <label style={{ fontSize: '12px', color: '#6b7280', fontWeight: '500' }}>
-                          Export Directory Name
-                        </label>
-                        <input
-                          type="text"
-                          value={exportDirName}
-                          onChange={(e) => setExportDirName(e.target.value)}
-                          placeholder={file?.name.replace(/\.[^/.]+$/, '') || 'export'}
-                          style={{
-                            padding: '8px 12px',
-                            border: '1px solid #d1d5db',
-                            borderRadius: '6px',
-                            fontSize: '14px',
-                            width: '200px'
-                          }}
-                        />
-                      </div>
-                      <button
-                        onClick={downloadOutput}
-                        style={{
-                          backgroundColor: '#2563eb',
-                          color: 'white',
-                          padding: '8px 24px',
-                          borderRadius: '8px',
-                          fontWeight: '500',
-                          border: 'none',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '8px',
-                          marginTop: '20px'
-                        }}
-                      >
-                        <Download style={{ width: '16px', height: '16px' }} />
-                        Download ZIP
-                      </button>
-                    </div>
-                  )}
                   {result && mode === 'csv-to-summary-csv' && (
-                    <button
-                      onClick={downloadOutput}
-                      style={{
-                        backgroundColor: '#2563eb',
-                        color: 'white',
-                        padding: '8px 24px',
-                        borderRadius: '8px',
-                        fontWeight: '500',
-                        border: 'none',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px'
-                      }}
-                    >
-                      <Download style={{ width: '16px', height: '16px' }} />
-                      Download Summary CSV
+                    <button onClick={downloadOutput} style={{ backgroundColor: '#2563eb', color: 'white', padding: '8px 24px', borderRadius: '8px', fontWeight: '500', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Download style={{ width: '16px', height: '16px' }} /> Download Summary CSV
                     </button>
                   )}
                 </div>
