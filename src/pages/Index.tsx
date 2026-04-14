@@ -1399,44 +1399,50 @@ const Index = () => {
     }
   };
 
-  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    console.log('📁 File selected event triggered');
-    const selectedFile = event.target.files?.[0];
-    if (selectedFile) {
-      console.log('📁 File:', selectedFile.name, selectedFile.size, 'bytes');
-      if (!selectedFile.name.toLowerCase().endsWith('.csv')) {
-        setError('Please select a CSV file');
-        setFile(null);
-        setResult(null);
-        setPreAnalysis(null);
-        return;
+  const addFiles = async (files: FileList | File[]) => {
+    const csvFiles = Array.from(files).filter(f => f.name.toLowerCase().endsWith('.csv'));
+    if (csvFiles.length === 0) { setError('Please select CSV file(s)'); return; }
+
+    if (mode === 'csv-to-json') {
+      const newEntries: FileEntry[] = csvFiles.map(f => ({
+        id: crypto.randomUUID(),
+        file: f,
+        exportName: f.name.replace(/\.[^/.]+$/, ''),
+        result: null,
+        error: '',
+        isProcessing: false,
+        isAnalyzing: true,
+        preAnalysis: null,
+      }));
+      setFileEntries(prev => [...prev, ...newEntries]);
+      // Analyze each in parallel
+      for (const entry of newEntries) {
+        analyzeFileEntry(entry.id, entry.file);
       }
+    } else {
+      // Legacy single-file for other modes
+      const selectedFile = csvFiles[0];
       setFile(selectedFile);
       setError('');
       setResult(null);
-      
-      // Immediately analyze the file
       await analyzeFile(selectedFile);
     }
   };
 
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (files && files.length > 0) {
+      await addFiles(files);
+    }
+    // Reset input so same file can be re-selected
+    event.target.value = '';
+  };
+
   const handleDrop = async (event: React.DragEvent) => {
     event.preventDefault();
-    console.log('📁 File dropped');
-    const droppedFile = event.dataTransfer.files[0];
-    if (droppedFile && droppedFile.name.toLowerCase().endsWith('.csv')) {
-      console.log('📁 File:', droppedFile.name, droppedFile.size, 'bytes');
-      setFile(droppedFile);
-      setError('');
-      setResult(null);
-      
-      // Immediately analyze the file
-      await analyzeFile(droppedFile);
-    } else {
-      setError('Please drop a CSV file');
-      setFile(null);
-      setResult(null);
-      setPreAnalysis(null);
+    const files = event.dataTransfer.files;
+    if (files && files.length > 0) {
+      await addFiles(files);
     }
   };
 
