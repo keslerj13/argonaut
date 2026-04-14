@@ -1112,8 +1112,9 @@ const Index = () => {
         // Pretty print the JSON with 2-space indentation
         const jsonContent = JSON.stringify(cleanedRecord, null, 2);
         
-        // Flat structure: just <guid>.json inside the zip
-        zip.file(`${guid}.json`, jsonContent);
+        // Group by first 2 characters of GUID
+        const prefix = guid.substring(0, 2);
+        zip.file(`${prefix}/${guid}.json`, jsonContent);
         exportedCount++;
       }
       
