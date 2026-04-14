@@ -564,7 +564,7 @@ const Index = () => {
     }
   };
 
-
+  const renderHighlightedJSON = (json: string) => {
     if (!json) return null;
 
     // For large inputs, skip syntax highlighting to avoid stack overflow
