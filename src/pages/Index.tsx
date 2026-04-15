@@ -1653,8 +1653,8 @@ const Index = () => {
                         </div>
 
                         {/* File info */}
-                        <div style={{ flex: '0 0 200px', minWidth: 0 }}>
-                          <div style={{ fontSize: '13px', fontWeight: '500', color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <div style={{ flex: '0 0 auto', maxWidth: '300px', minWidth: '100px' }}>
+                          <div style={{ fontSize: '13px', fontWeight: '500', color: '#1e293b', wordBreak: 'break-all', lineHeight: '1.3' }}>
                             {entry.file.name}
                           </div>
                           <div style={{ fontSize: '11px', color: '#94a3b8' }}>
