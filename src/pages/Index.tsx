@@ -1724,9 +1724,21 @@ const Index = () => {
 
                       {/* Analysis warnings */}
                       {entry.preAnalysis && entry.preAnalysis.issues.length > 0 && !entry.result && (
-                        <div style={{ marginTop: '8px', fontSize: '12px', color: '#b45309' }}>
-                          ⚠️ {entry.preAnalysis.issues.length} issue(s) detected
-                        </div>
+                        <details style={{ marginTop: '8px', fontSize: '12px', color: '#b45309' }}>
+                          <summary style={{ cursor: 'pointer', fontWeight: 500 }}>
+                            ⚠️ {entry.preAnalysis.issues.length} issue(s) detected — click to view
+                          </summary>
+                          <ul style={{ margin: '6px 0 0 0', paddingLeft: '20px', color: '#92400e', lineHeight: 1.5 }}>
+                            {entry.preAnalysis.issues.map((issue: string, i: number) => (
+                              <li key={i} style={{ wordBreak: 'break-word' }}>{issue}</li>
+                            ))}
+                          </ul>
+                          <div style={{ marginTop: '6px', fontSize: '11px', color: '#78350f' }}>
+                            Structure: {entry.preAnalysis.structure?.totalRows ?? '?'} rows
+                            {entry.preAnalysis.structure?.declaredNameFound === false && ' • declared_name not found'}
+                            {entry.preAnalysis.structure?.dataTypeRowFound === false && ' • Data Type row not found'}
+                          </div>
+                        </details>
                       )}
                     </div>
                   ))}
